@@ -46,7 +46,7 @@ is the only thing that ever scrolls, and only when it has to.
 arrived as a `RoomView` projected for one seat, so a card that player may not see was never
 transmitted. Actions POST, state lives behind `StateStore`, each player holds a private channel.
 
-**Not yet proven:** the Redis and Ably adapters — written against the documented APIs, but no request
+**Not yet proven:** the Redis and Ably adapters (and `src/store/env.ts` + `tests/store-env.test.ts`, added 2026-10-15 without a test run: run `bun run verify` and refresh the counts above) — written against the documented APIs, but no request
 has crossed a network. Effect targeting and every `ActionBar` sub-flow are implemented and
 unit-tested but have had **no human finger on them**.
 
@@ -82,7 +82,7 @@ bun run verify     # typecheck && lint && test  ← run before every commit
 
 **Environment (M4).** Names only, never values: `UPSTASH_REDIS_REST_URL`,
 `UPSTASH_REDIS_REST_TOKEN`, `ABLY_API_KEY`, `ROOM_SECRET`. `.env.example` lists them; `.env*` is
-gitignored. **All four are optional and each degrades independently:** no Upstash ⇒ an in-process
+gitignored. **Upstash credentials are also found under Vercel's integration names** (`<PREFIX>_KV_REST_API_URL` + `<PREFIX>_KV_REST_API_TOKEN`, never the read-only token; see `src/store/env.ts`), so the integration works without renaming anything in the dashboard. **All four are optional and each degrades independently:** no Upstash ⇒ an in-process
 `Map`, correct on one instance but wrong on Vercel; no `ABLY_API_KEY` ⇒ an in-process emitter and
 the client polls every 2s instead of pushing (§7); no `ROOM_SECRET` ⇒ a random per-process secret,
 warned once, so sessions break on redeploy — **required in production**.
@@ -108,7 +108,8 @@ src/
     types.ts · errors.ts · events.ts   state/action/event types, error codes, emit/emitPrivate
   store/        ← the room at rest.  RoomRecord (roster, hostId, state, rev, pending, eventSeq)
     types.ts · memory.ts (a Map) · redis.ts (one key `room:{CODE}`, CAS via a Lua `eval`)
-    index.ts      getStore() → redis when both Upstash vars are set, else memory
+    env.ts        redisCredentialsFromEnv(env) — UPSTASH_REDIS_REST_* or Vercel's <PREFIX>_KV_REST_API_*
+    index.ts      getStore() → redis when credentials are found, else memory
   realtime/     ← the room in motion.  publish(code, [{playerId, message}]) · tokenFor(...)
     types.ts · memory.ts (in-process emitter) · ably.ts (private per-player channels)
     index.ts      getRealtime() → ably when ABLY_API_KEY is set, else memory
@@ -279,6 +280,7 @@ after ~12h of no writes** (Redis `EXPIRE`, refreshed on every write).
 | 2026-10-15 | **`--card-h: calc(var(--card-w) * 1.4545)` was replaced by `--card-ratio` + `aspect-ratio` on `.kb-card`** — a real, pre-existing bug, not a refactor | A CSS custom property is substituted **where it is declared**: a `calc()` on `:root` resolves against the root's `--card-w` and is then inherited *frozen*, so it does not follow a descendant's override. Every place that shrank `--card-w` (compact hands, the peek tray) got a card the right width and the wrong height — measured at **43×85px, a ratio of 1.98 instead of 1.45**. Invisible against plain black rectangles; glaring the moment real art arrived | A second `.kb-card` rule per context (five places to forget); `height: calc(100% * …)` (needs a definite height, which is the problem); JS measurement (breaks SSR and resize) |
 | 2026-10-15 | `.kb-label { margin: 0 }` — the label class dresses `h3`, `p` and `label` | An `h3` at 12px still carries a 1em margin, so every heading cost 24px of nothing on top of the parent's flex gap: **48px across the opponent row and the player's own row**, which on an 844px phone was most of the second row of the hand | Setting the margins at each call site (the same bug, four places to forget) |
 | 2026-10-15 | **A peek notice is kept only for the round it arrived in** (`Peek.round`, pruned on insert) | The tray only ever grew: `setPeeks((prev) => [...prev, …])` with no bound meant a player who never tapped *Remember it* accumulated every peek and every draw of the whole game — measured at three cards after one turn, and a dock that eats the screen by round two. Nothing is lost by dropping them at a round boundary: at the reveal every card is face-up, so the reminder has stopped being information | A hard cap with a "+N earlier" note (silently withholds cards the player was shown); clearing on turn change (wipes the opening peeks, the only cards anyone legitimately saw); an effect on the round number (a second place the tray changes shape, and a lint error) |
+| 2026-10-15 | **Redis credentials are found by suffix and paired by prefix, in `src/store/env.ts`** | Vercel's Upstash integration names the variables `<PREFIX>_KV_REST_API_URL`/`_TOKEN` (the prefix is picked at install: `STORAGEKOBUL` here), not `UPSTASH_REDIS_REST_*`. Recognising only the latter would make a correct deploy silently fall back to the in-process `Map`, which looks fine for one player and splits rooms across serverless instances. Matching on the suffix means nothing has to be renamed in the Vercel dashboard. The URL and token must share a prefix (never mix two integrations), only `KV_REST_API_TOKEN` matches (the `…_READ_ONLY_TOKEN` ends differently, and the store writes), and keys are sorted so the choice is deterministic. Explicit `UPSTASH_REDIS_REST_*` still wins | Renaming the variables by hand in the dashboard (a manual step to forget on every re-install); hard-coding `STORAGEKOBUL_` (breaks on re-install); taking the first `*_TOKEN` found (could be the read-only one) |
 
 ---
 
