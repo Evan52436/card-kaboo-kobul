@@ -1,11 +1,13 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { PlayerId } from '@/engine/types';
+import { sessionKeyFromEnv } from './sessionKey';
 
 /**
  * ============================================================================
  *  SESSIONS — how a device proves which seat is its own
  * ============================================================================
- *  `base64url(payload).base64url(hmac)`, signed with ROOM_SECRET.
+ *  `base64url(payload).base64url(hmac)`, signed with the session key (see
+ *  `sessionKey.ts`: ROOM_SECRET, or a key derived from the Redis token).
  *
  *  Signed rather than "a random string plus a lookup table" for two reasons:
  *  a session survives a Redis blip, and it carries the (room, player) pair that
@@ -33,11 +35,15 @@ const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /**
  * The signing key, resolved once per process.
  *
- * With no ROOM_SECRET we mint a random one and warn. That is safe ONLY because
- * the in-memory store is the other half of the same unconfigured deployment and
- * it dies with this process too — the two fall back together. A production
- * deployment that sets Redis but forgets ROOM_SECRET would issue sessions no
- * other instance can verify, so that combination is refused outright below.
+ * Every instance has to arrive at the SAME key, or a session minted by one
+ * instance is rejected by the next and the player is kicked from the room. So
+ * the key comes from ROOM_SECRET, or failing that is derived from the Redis
+ * token every instance shares (`sessionKey.ts`).
+ *
+ * Only when neither exists do we mint a random per-process key and warn. That is
+ * safe ONLY because the in-memory store is the other half of the same
+ * unconfigured deployment and it dies with this process too — the two fall
+ * back together.
  *
  * Held on `globalThis` so Next's dev-server module reloads do not silently
  * rotate the key and log everyone out mid-game.
@@ -47,26 +53,22 @@ const globalSecret = globalThis as typeof globalThis & { __kabooSecret?: string 
 function secret(): string {
   if (globalSecret.__kabooSecret) return globalSecret.__kabooSecret;
 
-  const fromEnv = process.env.ROOM_SECRET;
-  if (fromEnv && fromEnv.length > 0) {
-    globalSecret.__kabooSecret = fromEnv;
-    return fromEnv;
-  }
-
-  const redisConfigured = Boolean(
-    process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN,
-  );
-  if (process.env.NODE_ENV === 'production' && redisConfigured) {
-    throw new Error(
-      'kaboo: ROOM_SECRET is required when a shared store is configured — ' +
-        'otherwise each instance signs sessions no other instance can verify.',
-    );
+  const resolved = sessionKeyFromEnv(process.env);
+  if (resolved) {
+    if (resolved.source === 'REDIS_TOKEN') {
+      console.warn(
+        'kaboo: ROOM_SECRET is unset; deriving the session key from the Redis token. ' +
+          'Every instance derives the same key, so this works. Set ROOM_SECRET for a dedicated key.',
+      );
+    }
+    globalSecret.__kabooSecret = resolved.key;
+    return resolved.key;
   }
 
   const minted = randomBytes(32).toString('hex');
   console.warn(
-    'kaboo: ROOM_SECRET is unset; using a random per-process key. ' +
-      'Sessions will not survive a restart. Set ROOM_SECRET before deploying.',
+    'kaboo: ROOM_SECRET is unset and no shared store is configured; using a random per-process key. ' +
+      'Sessions will not survive a restart.',
   );
   globalSecret.__kabooSecret = minted;
   return minted;

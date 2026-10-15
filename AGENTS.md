@@ -46,7 +46,7 @@ is the only thing that ever scrolls, and only when it has to.
 arrived as a `RoomView` projected for one seat, so a card that player may not see was never
 transmitted. Actions POST, state lives behind `StateStore`, each player holds a private channel.
 
-**Not yet proven:** the Redis and Ably adapters (and `src/store/env.ts` + `tests/store-env.test.ts`, added 2026-10-15 without a test run: run `bun run verify` and refresh the counts above) — written against the documented APIs, but no request
+**Not yet proven:** the Redis and Ably adapters (and `src/store/env.ts`, `src/server/sessionKey.ts` + `tests/store-env.test.ts`, `tests/session-key.test.ts`, added 2026-10-15 without a test run: run `bun run verify` and refresh the counts above) — written against the documented APIs, but no request
 has crossed a network. Effect targeting and every `ActionBar` sub-flow are implemented and
 unit-tested but have had **no human finger on them**.
 
@@ -85,7 +85,7 @@ bun run verify     # typecheck && lint && test  ← run before every commit
 gitignored. **Upstash credentials are also found under Vercel's integration names** (`<PREFIX>_KV_REST_API_URL` + `<PREFIX>_KV_REST_API_TOKEN`, never the read-only token; see `src/store/env.ts`), so the integration works without renaming anything in the dashboard. **All four are optional and each degrades independently:** no Upstash ⇒ an in-process
 `Map`, correct on one instance but wrong on Vercel; no `ABLY_API_KEY` ⇒ an in-process emitter and
 the client polls every 2s instead of pushing (§7); no `ROOM_SECRET` ⇒ a random per-process secret,
-warned once, so sessions break on redeploy — **required in production**.
+warned once, so sessions break on redeploy — **unless Redis is configured, in which case the session key is derived from the Redis token (`src/server/sessionKey.ts`) and is identical on every instance; set `ROOM_SECRET` for a dedicated key**.
 
 ---
 
@@ -116,6 +116,7 @@ src/
   server/       ← every use case. Framework-free, so tests drive it with no network.
     room.ts       createRoom · joinRoom · startRoom · act · read · leaveRoom · realtimeToken
     session.ts    HMAC-signed session tokens (base64url + timingSafeEqual)
+    sessionKey.ts sessionKeyFromEnv(env) — ROOM_SECRET, else derived from the Redis token, else null
     http.ts       status map, header/body/since parsing, one generic failure shape
     deps.ts       the singletons, cached on globalThis so a hot reload does not split the room
   app/          ← Next.js App Router
@@ -281,6 +282,7 @@ after ~12h of no writes** (Redis `EXPIRE`, refreshed on every write).
 | 2026-10-15 | `.kb-label { margin: 0 }` — the label class dresses `h3`, `p` and `label` | An `h3` at 12px still carries a 1em margin, so every heading cost 24px of nothing on top of the parent's flex gap: **48px across the opponent row and the player's own row**, which on an 844px phone was most of the second row of the hand | Setting the margins at each call site (the same bug, four places to forget) |
 | 2026-10-15 | **A peek notice is kept only for the round it arrived in** (`Peek.round`, pruned on insert) | The tray only ever grew: `setPeeks((prev) => [...prev, …])` with no bound meant a player who never tapped *Remember it* accumulated every peek and every draw of the whole game — measured at three cards after one turn, and a dock that eats the screen by round two. Nothing is lost by dropping them at a round boundary: at the reveal every card is face-up, so the reminder has stopped being information | A hard cap with a "+N earlier" note (silently withholds cards the player was shown); clearing on turn change (wipes the opening peeks, the only cards anyone legitimately saw); an effect on the round number (a second place the tray changes shape, and a lint error) |
 | 2026-10-15 | **Redis credentials are found by suffix and paired by prefix, in `src/store/env.ts`** | Vercel's Upstash integration names the variables `<PREFIX>_KV_REST_API_URL`/`_TOKEN` (the prefix is picked at install: `STORAGEKOBUL` here), not `UPSTASH_REDIS_REST_*`. Recognising only the latter would make a correct deploy silently fall back to the in-process `Map`, which looks fine for one player and splits rooms across serverless instances. Matching on the suffix means nothing has to be renamed in the Vercel dashboard. The URL and token must share a prefix (never mix two integrations), only `KV_REST_API_TOKEN` matches (the `…_READ_ONLY_TOKEN` ends differently, and the store writes), and keys are sorted so the choice is deterministic. Explicit `UPSTASH_REDIS_REST_*` still wins | Renaming the variables by hand in the dashboard (a manual step to forget on every re-install); hard-coding `STORAGEKOBUL_` (breaks on re-install); taking the first `*_TOKEN` found (could be the read-only one) |
+| 2026-10-15 | **The session key is `ROOM_SECRET`, else derived from the Redis token (`src/server/sessionKey.ts`); the old "throw in production if Redis is set but ROOM_SECRET is not" guard was removed** | Symptom: players were kicked from the room seconds into a game. Cause: with no shared key each serverless instance minted its own random one, so a session signed by one instance failed verification on the next, which the client treats as a lost seat. The old guard could not catch it, because it only looked for the `UPSTASH_REDIS_REST_*` names and Vercel's integration uses `<PREFIX>_KV_REST_API_*`. Every instance reads the same Redis token, so every instance derives the same key (HMAC with a fixed label, so the key does not reveal the token) and nothing needs setting in the Vercel dashboard. Trade-off: one secret serves two purposes; a leaked Redis token already exposes every room, so nothing new is exposed | Requiring `ROOM_SECRET` in the dashboard (the owner asked not to touch Vercel); keeping the throw and widening its env check (turns the misconfiguration into a loud 500 but still needs the manual step); a random key per instance (the bug) |
 
 ---
 
