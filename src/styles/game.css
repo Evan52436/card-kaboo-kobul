@@ -1,0 +1,726 @@
+/* =============================================================================
+ * Kaboo — layout
+ * =============================================================================
+ * Structure only. Every colour, size, radius, shadow and duration comes from
+ * tokens.css; this file must not introduce a raw value. See AGENTS.md §8.
+ *
+ * Mobile portrait is the primary layout and is written first. The three-column
+ * desktop view is added at the bottom under a min-width query.
+ * ========================================================================== */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-family: var(--font-sans);
+  /* dvh everywhere: on iOS the URL bar makes vh wrong by ~60px. */
+  min-height: 100dvh;
+}
+
+/* --- Shell ---------------------------------------------------------------- */
+/* .kb-table already carries the touch-action / overscroll / safe-area rules;
+   it is defined in tokens.css because it IS the "game surface" convention. */
+.kb-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.kb-table--gate {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-4);
+  text-align: center;
+}
+
+/* The dock carries the bottom of the screen — its own padding is safe-area
+   aware — so the table must not add a second gutter under it, or the bar stops
+   short of the home indicator instead of sitting against it.
+ *
+ * The table itself is exactly one screen tall and does not scroll: the header,
+ * the status pill and the dock are pinned, and the BOARD between them is what
+ * scrolls when a screen is too short for it. That is the difference between "the
+ * bottom of my hand is behind the buttons" and "scroll the table a little". */
+.kb-table--game {
+  padding-bottom: 0;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.kb-table--game .kb-board {
+  /* A flex child refuses to shrink below its content unless it is told to, and
+     without this the board pushes the dock off the bottom of the screen. */
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the card shadows, which would otherwise be clipped at the edge. */
+  padding: var(--space-1);
+  margin: calc(-1 * var(--space-1));
+}
+
+.kb-topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.kb-topbar > .kb-label {
+  margin-left: auto;
+  color: var(--c-ink-soft);
+}
+
+.kb-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.kb-status .kb-btn {
+  margin-left: auto;
+}
+
+/* --- Board ---------------------------------------------------------------- */
+/* The gaps here are the budget for fitting a whole game on one phone screen.
+   See the note on `--card-w`. */
+.kb-board {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.kb-centre {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+/* --- Opponents ------------------------------------------------------------ */
+.kb-opponents {
+  display: flex;
+  gap: var(--space-4);
+  overflow-x: auto;
+  padding-bottom: var(--space-1);
+}
+
+.kb-seat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+}
+
+.kb-seat .kb-label {
+  color: var(--c-ink-soft);
+}
+
+/* --- Piles ---------------------------------------------------------------- */
+.kb-piles {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+.kb-pile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+/* Label and count share a line. Stacked, the chip was 30px of a 141px pile —
+   a fifth of the height for two digits, in the column that decides whether the
+   player's own hand fits on the screen. */
+.kb-pile__head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+  /* Reserve the chip's height so the three piles' cards stay on one line even
+     though only two of them have a count. */
+  min-height: 20px;
+}
+
+/* A count is a readout, not a control, so it does not owe anyone 44px. */
+.kb-chip--count {
+  padding: 0 var(--space-1);
+  border-width: var(--bw-1);
+}
+
+.kb-pile .kb-label {
+  color: var(--c-ink-soft);
+  text-align: center;
+}
+
+/* The discard is the loudest target on the table: it is the thing you tap. */
+.kb-pile--discard .kb-card {
+  border-width: var(--bw-4);
+  box-shadow: var(--shadow);
+}
+
+.kb-pile__stack {
+  display: grid;
+  place-items: center;
+}
+
+/* --- Hand ----------------------------------------------------------------- */
+.kb-hand {
+  display: grid;
+  /* Exactly two columns: the 2x2 square is the thing players memorise, so the
+     layout must never reflow it into a different shape. Extra cards (penalties)
+     wrap onto a third row rather than changing the column count. */
+  grid-template-columns: repeat(2, auto);
+  gap: var(--space-2);
+  justify-content: start;
+  /* Never let a taller row stretch a card: the aspect ratio is the card. */
+  align-items: start;
+}
+
+.kb-hand__cell {
+  position: relative;
+}
+
+.kb-hand__index {
+  position: absolute;
+  inset-block-end: 0;
+  inset-inline-end: 0;
+  padding: 0 var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  color: var(--c-ink-muted);
+}
+
+.kb-hand--compact {
+  --card-w: clamp(40px, 11vw, 64px);
+}
+
+.kb-you {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: auto;
+}
+
+/* --- Card internals ------------------------------------------------------- */
+.kb-card {
+  cursor: default;
+}
+
+button.kb-card {
+  cursor: pointer;
+}
+
+/* A card you cannot tap is still a card you have to be able to read and count,
+   so this is a shading, not a fade. */
+button.kb-card:disabled {
+  cursor: default;
+  opacity: 0.82;
+}
+
+.kb-card:focus-visible {
+  outline: var(--focus-width) solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+/* The face image overshoots its frame by 4%, so the deck's own rounded border
+   and outline fall outside it and a card ends up with exactly one edge: the
+   2px rule above. Without this every card wears two. */
+.kb-card__face {
+  position: absolute;
+  inset: -2%;
+  width: 104%;
+  height: 104%;
+  display: block;
+  object-fit: fill;
+  user-select: none;
+  animation: kb-reveal var(--dur-flip) var(--ease) both;
+}
+
+@keyframes kb-reveal {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+/* Face-down: ink, a white keyline, and a second thinner one inside it. */
+.kb-card__back {
+  position: absolute;
+  inset: 3px;
+  border: var(--bw-2) solid var(--c-bg);
+}
+
+.kb-card__back::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: var(--bw-1) solid var(--c-bg);
+  opacity: 0.5;
+}
+
+.kb-card--dimmed {
+  opacity: 0.5;
+}
+
+/* --- Action dock ---------------------------------------------------------- */
+/* Every control the game needs, pinned to the bottom of the screen and centred
+   on every size.
+ *
+ * Where a button lives is not decoration. On a phone the bottom is where the
+ * thumb already is; on a desktop this used to be a full-width bar hanging off
+ * the bottom of the left-hand column, so the shortest mouse travel to "Swap"
+ * ran diagonally across the whole table.
+ *
+ * A flex child that never shrinks, in a table that is exactly one screen tall.
+ * `position: sticky` used to do this job, but sticky only pins a bar that is
+ * already at the bottom of the scroll — at the top of a too-tall page the bar
+ * sits in the middle of the document and the last row of your hand hides behind
+ * it. Owning the height instead means the dock is always at the bottom and the
+ * board is the only thing that ever scrolls. */
+.kb-dock {
+  flex: 0 0 auto;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  /* Full-bleed: pull back out through the table's own gutter. */
+  margin-inline: calc(-1 * var(--gutter) - env(safe-area-inset-left))
+    calc(-1 * var(--gutter) - env(safe-area-inset-right));
+  margin-top: var(--space-3);
+  padding: var(--space-3) calc(var(--gutter) + env(safe-area-inset-left))
+    calc(var(--space-4) + env(safe-area-inset-bottom))
+    calc(var(--gutter) + env(safe-area-inset-right));
+  background: var(--c-surface);
+  border-top: var(--bw-4) solid var(--c-ink);
+}
+
+.kb-dock .kb-error,
+.kb-dock .kb-peeks {
+  width: 100%;
+  max-width: 34rem;
+}
+
+.kb-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 48rem;
+}
+
+.kb-actions__hint {
+  flex: 1 1 100%;
+  margin: 0;
+  text-align: center;
+  font-size: var(--text-sm);
+  color: var(--c-ink-soft);
+}
+
+.kb-btn--small {
+  min-height: var(--tap-target);
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-xs);
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Peeks ---------------------------------------------------------------- */
+/* A transient notice: it is an event the player just received, not stored state,
+   so it appears, is read, and goes. It rides in the dock above the buttons
+   rather than floating over the table — a card you were just shown is worthless
+   if reading it means covering the pile the next player is about to tap. */
+/* One strip, not a sheet: it is in the dock, and a notice you have to dismiss
+   must not cost a quarter of the screen. The cards here are a reminder, not a
+   hand to read at a glance.
+ *
+ * The heading sits in a column BESIDE the cards rather than stacked above them.
+ * Three stacked bands ("you saw" + button, then the cards, then their captions)
+ * came to 156px, which was enough to push the last row of the player's own hand
+ * out of the table — while the notice telling them what they had just seen was
+ * the reason it no longer fitted. */
+.kb-peeks {
+  --card-w: clamp(40px, 11vw, 56px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  /* `--space-2` across as well as down: at 390px the heading and three notices
+     came to 369px against 358px of gutter, and those 11px were a whole extra
+     band of the dock — 80px off the table — to say the same thing. */
+  gap: var(--space-2);
+  background: var(--c-highlight);
+  border: var(--bw-2) solid var(--c-ink);
+  box-shadow: var(--shadow);
+  padding: var(--space-2) var(--space-3);
+}
+
+.kb-peeks__head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.kb-peeks__cards {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: 0;
+}
+
+/* A caption is a note about the card, not the card. Capped so that the longest
+   of them — "the last card — only you saw it" — wraps under its card instead of
+   stretching the tray past the width of the phone and forcing a second row. */
+.kb-peeks__item {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.kb-peeks__item .kb-label {
+  max-width: 13ch;
+  text-align: center;
+}
+
+/* --- Panels --------------------------------------------------------------- */
+.kb-panel {
+  border: var(--bw-2) solid var(--c-ink);
+  padding: var(--space-3);
+  background: var(--c-surface);
+}
+
+/* Mobile is the primary layout and it has one screen for everything, so the two
+   desktop side panels give their space back: the log is a desktop affordance —
+   the status pill already says what is happening now, and the last few lines are
+   read at the reveal — and the scoreboard becomes a strip of chips instead of a
+   bordered panel with a heading. Both are restored under the min-width query at
+   the bottom of this file. */
+.kb-panel--log {
+  display: none;
+}
+
+.kb-panel--scores {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.kb-panel--scores .kb-panel__title {
+  display: none;
+}
+
+.kb-panel--scores .kb-scores {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.kb-panel--scores .kb-scores__row {
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+  border-color: var(--c-ink);
+  background: var(--c-bg);
+  font-size: var(--text-xs);
+}
+
+.kb-panel--scores .kb-scores__name {
+  flex: 0 0 auto;
+}
+
+.kb-panel--scores .kb-scores__row--turn {
+  background: var(--c-highlight);
+}
+
+/* The round is already in the topbar and the draw pile is already a number on
+   the pile itself, so on a phone this line is pure duplicate — and a line of
+   text is 18px of the hand that a 844px screen does not have. */
+.kb-panel--scores .kb-panel__note {
+  display: none;
+}
+
+.kb-panel__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.kb-panel__note {
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--c-ink-muted);
+}
+
+.kb-scores {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kb-scores__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+  border: var(--bw-1) solid transparent;
+}
+
+.kb-scores__row--turn {
+  border-color: var(--c-ink);
+  background: var(--c-highlight);
+}
+
+.kb-scores__row--you {
+  font-weight: var(--fw-bold);
+}
+
+.kb-scores__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: 1;
+}
+
+.kb-scores__cards {
+  font-family: var(--font-mono);
+  color: var(--c-ink-muted);
+}
+
+.kb-scores__total {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-black);
+  min-width: 2ch;
+  text-align: right;
+}
+
+.kb-log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 40dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.kb-log__row {
+  display: flex;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+}
+
+.kb-log__kind {
+  font-family: var(--font-mono);
+  color: var(--c-ink-muted);
+  min-width: 10ch;
+}
+
+/* --- Gate / forms --------------------------------------------------------- */
+.kb-gate__title {
+  font-size: var(--text-3xl);
+}
+
+.kb-gate__body {
+  max-width: 34ch;
+  margin: 0;
+  color: var(--c-ink-soft);
+}
+
+.kb-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(100%, 32rem);
+  text-align: start;
+}
+
+.kb-input {
+  min-height: var(--tap-target);
+  padding: var(--space-2);
+  border: var(--bw-2) solid var(--c-ink);
+  border-radius: var(--radius);
+  background: var(--c-bg);
+  font-family: var(--font-mono);
+  font-size: var(--text-base);
+  width: 100%;
+}
+
+.kb-input:focus-visible {
+  outline: var(--bw-2) solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+/* The room code is read aloud, so it is large, mono and unmissable. */
+.kb-chip--room {
+  align-self: flex-start;
+  font-size: var(--text-3xl);
+  padding: var(--space-2) var(--space-4);
+  letter-spacing: var(--tracking-wide);
+}
+
+.kb-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: var(--bw-2) solid var(--c-danger);
+  background: var(--c-danger-soft);
+  font-size: var(--text-sm);
+}
+
+.kb-footnote {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--c-ink-muted);
+  text-align: center;
+}
+
+/* On a phone it is the difference between the hand being on screen and not, and
+   the hand's own heading already says which two slots are the bottom two. */
+.kb-table--game .kb-footnote {
+  display: none;
+}
+
+/* =============================================================================
+ * Desktop: scoreboard left, table centre, log right.
+ * ========================================================================== */
+@media (min-width: 60rem) {
+  .kb-table {
+    min-height: 100dvh;
+    gap: var(--space-4);
+  }
+
+  /* Three columns, each exactly as tall as the space the dock leaves — and each
+     scrolling on its own. The alternative is what this replaces: the whole board
+     as one scroller, which dragged the scoreboard's heading off the top of the
+     screen the moment the player's own hand needed to come into view. A column
+     that scrolls is a column that keeps its heading. */
+  .kb-board {
+    display: grid;
+    grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr) minmax(14rem, 20rem);
+    /* One row, sized to the container rather than to the tallest column — an
+       auto row would grow to the tallest content and put the overflow straight
+       back outside the board. */
+    grid-template-rows: minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .kb-board > * {
+    /* A grid item will not shrink below its content without this, and an item
+       that cannot shrink cannot scroll. */
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .kb-opponents {
+    justify-content: center;
+    overflow-x: visible;
+  }
+
+  .kb-you {
+    margin-top: auto;
+  }
+
+  /* Bigger, not just further apart: at arm's length across a desk a 14px label
+     in a 44px box is a target you have to aim at. */
+  .kb-btn {
+    min-height: 56px;
+    padding: var(--space-4) var(--space-6);
+    font-size: var(--text-base);
+  }
+
+  .kb-btn--small {
+    min-height: var(--tap-target);
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-xs);
+  }
+
+  .kb-actions__hint {
+    font-size: var(--text-base);
+  }
+
+  .kb-dock {
+    margin-top: var(--space-4);
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  }
+
+  /* The side columns come back. */
+  .kb-table--game .kb-footnote {
+    display: block;
+  }
+
+  .kb-panel--log {
+    display: block;
+  }
+
+  .kb-panel--scores {
+    border: var(--bw-2) solid var(--c-ink);
+    padding: var(--space-3);
+    background: var(--c-surface);
+  }
+
+  .kb-panel--scores .kb-panel__title {
+    display: block;
+  }
+
+  .kb-panel--scores .kb-scores {
+    flex-direction: column;
+    flex-wrap: nowrap;
+  }
+
+  .kb-panel--scores .kb-scores__row {
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-color: transparent;
+    background: transparent;
+    font-size: var(--text-base);
+  }
+
+  .kb-panel--scores .kb-scores__name {
+    flex: 1;
+  }
+
+  .kb-panel--scores .kb-scores__row--turn {
+    border-color: var(--c-ink);
+    background: var(--c-highlight);
+  }
+
+  .kb-panel--scores .kb-panel__note {
+    display: block;
+    margin-top: var(--space-2);
+  }
+
+  .kb-peeks {
+    --card-w: clamp(56px, 5vw, 72px);
+  }
+
+  /* The log panel is a scroll container now, so its list must not be a second
+     one inside it — two nested scrollers in a 20rem column is a trap. */
+  .kb-log {
+    max-height: none;
+    overflow-y: visible;
+  }
+}

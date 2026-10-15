@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Kaboo">
+  <rect width="64" height="64" fill="#000000"/>
+  <rect x="7" y="7" width="50" height="50" fill="none" stroke="#ffffff" stroke-width="3"/>
+  <text x="32" y="45" text-anchor="middle"
+        font-family="Geist, ui-sans-serif, system-ui, sans-serif"
+        font-size="38" font-weight="900" fill="#fef08a">K</text>
+</svg>

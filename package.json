@@ -1,0 +1,36 @@
+{
+  "name": "kaboo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kaboo — browser-based multiplayer card game for friends, via room code.",
+  "packageManager": "bun@1.4.2",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "verify": "bun run typecheck && bun run lint && bun run test",
+    "smoke": "bun scripts/smoke.mjs",
+    "cards": "bun scripts/cards.mjs"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.39.0",
+    "ably": "^2.29.0",
+    "next": "^16.4.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.1",
+    "fast-check": "^4.10.2",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.4"
+  }
+}

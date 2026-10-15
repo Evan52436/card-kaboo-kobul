@@ -1,0 +1,21 @@
+# deps / build
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# bun.lock is the lockfile. npm's is ignored so the two can never disagree.
+package-lock.json
+yarn.lock
+
+# secrets — NEVER commit values. See .env.example for the names.
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+*.log
+coverage/
+.vercel

@@ -1,0 +1,343 @@
+/* =============================================================================
+ * Kaboo — design tokens
+ * =============================================================================
+ * The ONLY place raw colours, sizes, radii, shadows and timings are defined.
+ * Everything else in the app references these variables.
+ *
+ * Source: computed styles read from https://hackathon.ackteams.com/ (and
+ * /student) in headless Chromium — every element walked with getComputedStyle,
+ * values aggregated. Colour, type, border weight, radii, shadows, spacing and
+ * motion only; none of the reference's layout or content is reproduced.
+ * Provenance for each value is tabulated in AGENTS.md §8.
+ *
+ * The reference is a neo-brutalist system: zero radius, hard black borders,
+ * hard offset shadows with zero blur, and "press = move into the shadow" as the
+ * motion signature. Do not dilute it.
+ * ========================================================================== */
+
+:root {
+  /* --- Colour ------------------------------------------------------------ */
+  --c-bg: #ffffff; /* page */
+  --c-surface: #f9fafb; /* panels, cards */
+  --c-surface-2: #f3f4f6; /* nested / alt rows */
+  --c-ink: #000000; /* every border, and all body text */
+  --c-ink-soft: #364153;
+  --c-ink-muted: #4a5565;
+
+  --c-primary: #0055ff;
+  --c-primary-press: #193cb8; /* also the "ink on tinted surface" colour */
+  --c-primary-soft: #dbeafe;
+  --c-primary-line: #90c5ff;
+
+  --c-highlight: #fef08a; /* KABOO — the loudest thing on screen */
+
+  --c-danger: #fb2c36;
+  --c-danger-soft: #ffe2e2;
+  --c-success: #008138;
+  --c-success-soft: #dcfce7;
+
+  /* --- Borders, radii, shadows ------------------------------------------- */
+  --bw-1: 1px;
+  --bw-2: 2px; /* standard */
+  --bw-4: 4px; /* section dividers */
+
+  --radius: 0; /* the reference computes 0 on every single element */
+
+  --shadow-sm: 2px 2px 0 0 var(--c-ink);
+  --shadow: 4px 4px 0 0 var(--c-ink);
+  --shadow-lg: 8px 8px 0 0 var(--c-ink);
+
+  /* --- Type -------------------------------------------------------------- */
+  --font-sans: Geist, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --text-xs: 12px;
+  --text-sm: 14px;
+  --text-base: 16px;
+  --text-lg: 18px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
+  --text-3xl: 36px;
+  --text-4xl: 48px;
+
+  --fw-normal: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+  --fw-black: 900;
+
+  --tracking-tight: -0.025em;
+  --tracking-tighter: -0.05em;
+  --tracking-wide: 0.1em;
+
+  --leading-tight: 1.15;
+  --leading-normal: 1.5;
+
+  /* --- Spacing (4px base) ------------------------------------------------ */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* On a phone the whole game must fit one screen, so the surface is sized in
+     dvh (never vh — the URL bar makes vh wrong on iOS) inside the safe area. */
+  --gutter: 16px;
+  --tap-target: 44px; /* a mistap costs a penalty card: correctness, not taste */
+  /* Sized to fit a phone: the whole point of the 2x2 hand is that you take it in
+     at a glance, and a card that pushes the hand off the screen cannot be
+     glanced at. 88px is the desktop cap. */
+  --card-w: clamp(52px, 15vw, 88px);
+  /* The artwork's own ratio (167.09 x 242.67), the same number `scripts/cards.mjs`
+     renders at. A card's height comes from `aspect-ratio` rather than from a
+     computed `--card-h`, because a custom property is substituted where it is
+     DECLARED — so a `--card-h: calc(var(--card-w) * …)` on `:root` is resolved
+     against the root `--card-w` and then inherited, frozen, and every place that
+     shrinks `--card-w` (compact hands, the peek tray) gets a card that is the
+     right width and the wrong height. Which is to say: a stretched face. */
+  --card-ratio: 1.4545;
+  /* The one control that must never be missed, including by a keyboard. */
+  --focus-width: 4px;
+
+  /* --- Motion ------------------------------------------------------------ */
+  --dur: 150ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-flip: 240ms; /* card reveals are the one deliberate exception */
+}
+
+/* =============================================================================
+ * Component conventions
+ * ========================================================================== */
+
+/* --- Surfaces ------------------------------------------------------------ */
+.kb-surface {
+  background: var(--c-bg);
+  border: var(--bw-2) solid var(--c-ink);
+  box-shadow: var(--shadow);
+}
+
+.kb-surface--soft {
+  background: var(--c-surface);
+}
+
+/* A section header is a 4px rule, as in the reference's h2/header. */
+.kb-header {
+  border-bottom: var(--bw-4) solid var(--c-ink);
+  padding-bottom: var(--space-3);
+}
+
+/* --- Buttons ------------------------------------------------------------- */
+.kb-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  min-width: var(--tap-target);
+  padding: var(--space-3) var(--space-4);
+  border: var(--bw-2) solid var(--c-ink);
+  border-radius: var(--radius);
+  background: var(--c-bg);
+  color: var(--c-ink);
+  box-shadow: var(--shadow);
+  font-family: var(--font-sans);
+  font-size: var(--text-sm);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease),
+    background-color var(--dur) var(--ease);
+}
+
+.kb-btn:hover:not(:disabled) {
+  background: var(--c-surface-2);
+}
+
+/* Press = move into the shadow. The offset must match the shadow's. */
+.kb-btn:active:not(:disabled) {
+  box-shadow: none;
+  transform: translate(4px, 4px);
+}
+
+.kb-btn:focus-visible {
+  outline: var(--focus-width) solid var(--c-primary);
+  outline-offset: 2px;
+}
+
+/* Inert, not invisible.
+   This used to be `opacity: 0.45`, which faded the label to about 2:1 — a
+   button you cannot read is not a button, and "why is nothing happening" is the
+   worst thing a control can make you ask. Flat, soft and muted instead: clearly
+   pressed-in next to the raised ones, still legible at 6.5:1. */
+.kb-btn:disabled {
+  opacity: 1;
+  background: var(--c-surface-2);
+  color: var(--c-ink-muted);
+  border-color: var(--c-ink-muted);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.kb-btn--primary {
+  background: var(--c-primary);
+  color: var(--c-bg);
+}
+.kb-btn--primary:hover:not(:disabled) {
+  background: var(--c-primary-press);
+}
+.kb-btn--primary:focus-visible {
+  outline-color: var(--c-ink);
+}
+
+.kb-btn--danger {
+  background: var(--c-danger);
+  color: var(--c-bg);
+}
+
+/* KABOO is unmistakable: highlight yellow, black text, and an 8px shadow so it
+   reads as the heaviest control even in peripheral vision. Black on #fef08a is
+   17:1 — never put white text on this. */
+.kb-btn--kaboo {
+  background: var(--c-highlight);
+  color: var(--c-ink);
+  box-shadow: var(--shadow-lg);
+  font-weight: var(--fw-black);
+}
+.kb-btn--kaboo:active:not(:disabled) {
+  box-shadow: none;
+  transform: translate(8px, 8px);
+}
+
+/* --- Chips (room codes, labels, counters) -------------------------------- */
+.kb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  border: var(--bw-2) solid var(--c-ink);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+.kb-chip--dark {
+  background: var(--c-ink);
+  color: var(--c-bg);
+}
+
+/* blue-800 on blue-100 is 7.4:1 */
+.kb-chip--soft {
+  background: var(--c-primary-soft);
+  color: var(--c-primary-press);
+}
+
+/* --- Type ---------------------------------------------------------------- */
+.kb-title {
+  font-family: var(--font-sans);
+  font-weight: var(--fw-black);
+  letter-spacing: var(--tracking-tighter);
+  line-height: var(--leading-tight);
+  text-transform: uppercase;
+  margin: 0;
+}
+
+/* `margin: 0` is load-bearing, not tidiness. `.kb-label` dresses `h3`, `p` and
+   `label`, and an h3 at 12px still carries a 1em margin — 12px above and 12px
+   below, on top of the parent's flex gap. That is 48px of nothing in the
+   opponent row and the player's own row, which on a 844px phone is most of the
+   second row of your hand. */
+.kb-label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+}
+
+/* --- Cards --------------------------------------------------------------- */
+/* The card is a frame: a 2px rule, no radius, a hard shadow. The face image
+   fills it and is clipped by it. */
+.kb-card {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  width: var(--card-w);
+  aspect-ratio: 1 / var(--card-ratio);
+  border: var(--bw-2) solid var(--c-ink);
+  border-radius: var(--radius);
+  background: var(--c-bg);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-sans);
+  font-weight: var(--fw-bold);
+  transition:
+    transform var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+
+/* Face-down: an ink block with a white keyline, drawn in CSS. Deliberately not
+   a card back from the deck — a shut card must not read as "a card" from across
+   the table, and nothing has to load for the ten of them in front of you. */
+.kb-card--down {
+  background: var(--c-ink);
+}
+
+/* Selected for a swap/tap: lifted, and the only place we use a colour ring. */
+.kb-card--selected {
+  box-shadow: 0 0 0 3px var(--c-primary), var(--shadow-sm);
+  transform: translateY(-2px);
+}
+
+/* An empty slot stays visibly empty — hands are never compacted, because
+   players remember positions. */
+.kb-card--empty {
+  background: transparent;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+/* --- Game surface -------------------------------------------------------- */
+.kb-table {
+  /* Kill double-tap zoom and rubber-banding: a mistap costs a penalty card. */
+  touch-action: manipulation;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  /* dvh, never vh — the URL bar makes vh wrong on iOS. */
+  min-height: 100dvh;
+  padding: var(--gutter);
+  padding-bottom: calc(var(--gutter) + env(safe-area-inset-bottom));
+  padding-top: calc(var(--gutter) + env(safe-area-inset-top));
+  padding-left: calc(var(--gutter) + env(safe-area-inset-left));
+  padding-right: calc(var(--gutter) + env(safe-area-inset-right));
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}
+
+/* --- Reduced motion ------------------------------------------------------ */
+/* Card movement is the game, so we do not remove it — we make it instant.
+   Dropping the animation entirely would lose the "this card moved" cue. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur: 0ms;
+    --dur-flip: 0ms;
+  }
+
+  .kb-btn:active:not(:disabled),
+  .kb-btn--kaboo:active:not(:disabled),
+  .kb-card--selected {
+    transform: none;
+  }
+}
