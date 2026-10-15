@@ -20,6 +20,7 @@ export function Card({
   faceDown = false,
   selected = false,
   dimmed = false,
+  live = false,
   empty = false,
   label,
   onClick,
@@ -29,6 +30,14 @@ export function Card({
   faceDown?: boolean;
   selected?: boolean;
   dimmed?: boolean;
+  /**
+   * This card is what the current decision is about.
+   *
+   * A look, not a control state: it makes the card the eye should be on the
+   * loudest thing on the table. Only ever set on a card the viewer may act on
+   * right now — see how `GameScreen` chooses them.
+   */
+  live?: boolean;
   empty?: boolean;
   label?: string;
   onClick?: () => void;
@@ -42,6 +51,9 @@ export function Card({
   if (faceDown) classes.push('kb-card--down');
   if (selected) classes.push('kb-card--selected');
   if (dimmed) classes.push('kb-card--dimmed');
+  // Selection wins: the two share the ring, and a card the player has already
+  // committed to is answering a different question than "which card is live".
+  if (live && !selected) classes.push('kb-card--live');
 
   const name = faceDown ? 'face-down card' : card ? cardName(card) : 'card';
   const accessible = label ? `${label}: ${name}` : name;

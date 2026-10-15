@@ -31,9 +31,9 @@ Have the **fewest points** at the end of the round. Over several rounds, the pla
 
 ## Setup
 
-- Each player gets **4 cards face down** in a **2x2 square**. The rest of the deck is the **draw pile**, with the top card turned over to start the **discard pile**.
-- The cards never move around. If a card leaves the table, its spot stays empty, because **where** your cards are is part of what you have to remember.
-- Each player may look at their **bottom two cards, once each**, and then memorizes them. Press **Ready** when you are done.
+- Each player gets **4 cards face down** in a **row**, side by side. The rest of the deck is the **draw pile**, with the top card turned over to start the **discard pile**.
+- The cards never move around. If a card leaves the table, its spot stays empty, because **where** your cards are is part of what you have to remember. If you collect extra cards, the row scrolls sideways.
+- Each player may look at **cards 3 and 4** (the last two of their four), **once each**, and then memorizes them. Press **Ready** when you are done.
 - The player after the dealer goes first. The dealer rotates each round.
 
 ## On your turn

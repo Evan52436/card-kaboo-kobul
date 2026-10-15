@@ -40,10 +40,27 @@ export interface ActionBarProps {
   onDeclinePlacement: () => void;
   onContinue: () => void;
   waitingOn: string | null;
+  /**
+   * A private notice is still on screen.
+   *
+   * Only the peek branch reads it. Looking at your own two cards IS the peek
+   * phase, so a player who skips past the notice has thrown away the one thing
+   * the phase gives them — and "Ready" is the step that ends it.
+   *
+   * A client-side gate, deliberately: the notices are transient reveals and the
+   * server keeps no record of them (AGENTS.md §7), so there is no dismissal for
+   * it to enforce. The 45s peek deadline still readies everyone, so this can
+   * never strand a table.
+   */
+  mustAcknowledge: boolean;
 }
 
 export function ActionBar(props: ActionBarProps) {
   const { view, isYourTurn, can, intent } = props;
+  // A card the player was just shown is still open: no turn action until it is
+  // closed. Tap flows return before any branch that reads this, on purpose — a tap
+  // is a race and never waits on a dialog.
+  const closeFirst = props.mustAcknowledge;
 
   if (view.phase === 'reveal' || view.phase === 'gameOver') {
     return (
@@ -56,10 +73,23 @@ export function ActionBar(props: ActionBarProps) {
   }
 
   if (view.phase === 'peek') {
+    // Say why the button is inert. A disabled control with no stated reason is
+    // the worst thing on a screen — `.kb-btn:disabled` is already legible rather
+    // than faded, and this line is the other half of that.
+    const held = props.mustAcknowledge;
     return (
       <Bar>
-        <Hint>Tap your bottom two cards to look — once each.</Hint>
-        <button type="button" className="kb-btn kb-btn--primary" onClick={props.onReady}>
+        <Hint>
+          {held
+            ? 'Close what you saw first — tap Remember it above.'
+            : 'Tap cards 3 and 4 to look — once each.'}
+        </Hint>
+        <button
+          type="button"
+          className="kb-btn kb-btn--primary"
+          onClick={props.onReady}
+          disabled={held}
+        >
           Ready
         </button>
       </Bar>
@@ -87,16 +117,17 @@ export function ActionBar(props: ActionBarProps) {
   if (view.phase === 'finalSwap') {
     return (
       <Bar>
-        <Hint>You drew the last card — swap it in, or decline.</Hint>
+        <Hint>{closeFirst ? CLOSE_FIRST : 'You drew the last card — swap it in, or decline.'}</Hint>
         <button
           type="button"
           className="kb-btn kb-btn--primary"
           onClick={() => props.onIntent('finalSwap')}
+          disabled={closeFirst}
           aria-pressed={intent === 'finalSwap'}
         >
           Swap it in
         </button>
-        <button type="button" className="kb-btn" onClick={props.onFinalDecline}>
+        <button type="button" className="kb-btn" onClick={props.onFinalDecline} disabled={closeFirst}>
           Decline
         </button>
       </Bar>
@@ -122,14 +153,20 @@ export function ActionBar(props: ActionBarProps) {
   if (isYourTurn && can('DRAW')) {
     return (
       <Bar>
-        <button type="button" className="kb-btn kb-btn--primary" onClick={() => props.onDraw('deck')}>
+        {closeFirst && <Hint>{CLOSE_FIRST}</Hint>}
+        <button
+          type="button"
+          className="kb-btn kb-btn--primary"
+          onClick={() => props.onDraw('deck')}
+          disabled={closeFirst}
+        >
           Draw
         </button>
         <button
           type="button"
           className="kb-btn"
           onClick={() => props.onDraw('discard')}
-          disabled={view.discardTop === null}
+          disabled={closeFirst || view.discardTop === null}
         >
           Take the {view.discardTop ? `${view.discardTop.rank}${view.discardTop.suit ?? ''}` : 'pile'}
         </button>
@@ -137,12 +174,12 @@ export function ActionBar(props: ActionBarProps) {
           type="button"
           className="kb-btn kb-btn--kaboo"
           onClick={props.onKaboo}
-          disabled={!can('CALL_KABOO')}
+          disabled={closeFirst || !can('CALL_KABOO')}
         >
           KABOO
         </button>
         {can('COUNTER_KABOO') && (
-          <button type="button" className="kb-btn" onClick={props.onCounterKaboo}>
+          <button type="button" className="kb-btn" onClick={props.onCounterKaboo} disabled={closeFirst}>
             Counter-KABOO
           </button>
         )}
@@ -154,15 +191,21 @@ export function ActionBar(props: ActionBarProps) {
   if (can('SWAP') || can('DISCARD')) {
     return (
       <Bar>
+        {closeFirst && <Hint>{CLOSE_FIRST}</Hint>}
         <button
           type="button"
           className="kb-btn kb-btn--primary"
           onClick={() => props.onIntent('swap')}
-          disabled={!can('SWAP')}
+          disabled={closeFirst || !can('SWAP')}
         >
           Swap
         </button>
-        <button type="button" className="kb-btn" onClick={props.onDiscard} disabled={!can('DISCARD')}>
+        <button
+          type="button"
+          className="kb-btn"
+          onClick={props.onDiscard}
+          disabled={closeFirst || !can('DISCARD')}
+        >
           Discard
         </button>
       </Bar>
@@ -178,6 +221,7 @@ export function ActionBar(props: ActionBarProps) {
 
 function EffectBar(props: ActionBarProps) {
   const { view, intent } = props;
+  const closeFirst = props.mustAcknowledge;
   const effect = view.effect;
   if (!effect) return null;
   const rank = effect.rank;
@@ -210,12 +254,13 @@ function EffectBar(props: ActionBarProps) {
   const label = LABELS[rank] ?? 'Use the effect';
   return (
     <Bar>
-      <Hint>{label}</Hint>
+      <Hint>{closeFirst ? CLOSE_FIRST : label}</Hint>
       {rank === '7' || rank === '8' ? (
         <button
           type="button"
           className="kb-btn kb-btn--primary"
           onClick={() => props.onIntent('effectOwn')}
+          disabled={closeFirst}
           aria-pressed={intent === 'effectOwn'}
         >
           Look at my card
@@ -226,6 +271,7 @@ function EffectBar(props: ActionBarProps) {
           type="button"
           className="kb-btn kb-btn--primary"
           onClick={() => props.onIntent('effectOther')}
+          disabled={closeFirst}
           aria-pressed={intent === 'effectOther'}
         >
           Look at their card
@@ -236,6 +282,7 @@ function EffectBar(props: ActionBarProps) {
           type="button"
           className="kb-btn kb-btn--primary"
           onClick={() => props.onIntent('blindFirst')}
+          disabled={closeFirst}
           aria-pressed={intent === 'blindFirst' || intent === 'blindSecond'}
         >
           Blind-swap two cards
@@ -246,6 +293,7 @@ function EffectBar(props: ActionBarProps) {
           type="button"
           className="kb-btn kb-btn--primary"
           onClick={() => props.onIntent('queenOwn')}
+          disabled={closeFirst}
           aria-pressed={intent === 'queenOwn' || intent === 'queenTarget'}
         >
           Swap one of mine
@@ -256,17 +304,21 @@ function EffectBar(props: ActionBarProps) {
           type="button"
           className="kb-btn kb-btn--primary"
           onClick={() => props.onIntent('kingFirst')}
+          disabled={closeFirst}
           aria-pressed={intent === 'kingFirst' || intent === 'kingSecond'}
         >
           Look at two cards
         </button>
       ) : null}
-      <button type="button" className="kb-btn" onClick={props.onSkipEffect}>
+      <button type="button" className="kb-btn" onClick={props.onSkipEffect} disabled={closeFirst}>
         Skip
       </button>
     </Bar>
   );
 }
+
+/** Why the turn buttons are inert while a card you were shown is still open. */
+const CLOSE_FIRST = 'Tap Remember it to close the card you saw first.';
 
 const LABELS: Record<string, string> = {
   '7': 'Seven — look at one of your own cards.',

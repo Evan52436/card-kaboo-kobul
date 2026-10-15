@@ -106,6 +106,7 @@
   --dur: 150ms;
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --dur-flip: 240ms; /* card reveals are the one deliberate exception */
+  --dur-landed: 1200ms; /* how long the ring stays on a card that just arrived; CardFlights holds the matching class for the same time */
 }
 
 /* =============================================================================
@@ -281,6 +282,7 @@
   font-family: var(--font-sans);
   font-weight: var(--fw-bold);
   transition:
+    translate var(--dur) var(--ease),
     transform var(--dur) var(--ease),
     box-shadow var(--dur) var(--ease);
 }
@@ -292,10 +294,15 @@
   background: var(--c-ink);
 }
 
-/* Selected for a swap/tap: lifted, and the only place we use a colour ring. */
+/* Selected for a swap/tap: lifted, and the only place we use a colour ring.
+ *
+ * The lift is a `translate`, not a `transform`, so that the hover and press
+ * states in game.css can add to it and cancel it rather than fight it: the two
+ * are separate properties that compose. `transform` is left free for a future
+ * rotate/scale. */
 .kb-card--selected {
   box-shadow: 0 0 0 3px var(--c-primary), var(--shadow-sm);
-  transform: translateY(-2px);
+  translate: 0 -2px;
 }
 
 /* An empty slot stays visibly empty — hands are never compacted, because
@@ -338,6 +345,7 @@
   .kb-btn:active:not(:disabled),
   .kb-btn--kaboo:active:not(:disabled),
   .kb-card--selected {
+    translate: none;
     transform: none;
   }
 }

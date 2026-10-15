@@ -5,6 +5,7 @@ import type { CardRef, PlayerId } from '@/engine/types';
 import { ActionBar } from '@/components/ActionBar';
 import type { Intent } from '@/components/ActionBar';
 import { Card } from '@/components/Card';
+import { CardFlights } from '@/components/CardFlights';
 import { Hand } from '@/components/Hand';
 import { GameLog, PeekTray, Scoreboard, StatusPill } from '@/components/Panels';
 import type { Game } from '@/lib/useGame';
@@ -21,12 +22,66 @@ import type { Game } from '@/lib/useGame';
  * lobby and the table are two views of ONE live connection, so the deal must not
  * tear down the stream and rebuild it.
  */
+/**
+ * The intents whose every choice is a card of the player's own.
+ *
+ * Used only for deciding what to highlight. Deliberately not `tapChoose`,
+ * `effectOther`, `blindFirst/Second`, `kingFirst/Second` or `queenTarget` — each
+ * of those can be answered from any hand on the table, so there is no one set to
+ * point at.
+ */
+const OWN_HAND_DECISIONS: ReadonlySet<Intent> = new Set<Intent>([
+  'swap',
+  'finalSwap',
+  'tapPlace',
+  'effectOwn',
+  'queenOwn',
+]);
+
 export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void }) {
   const [intent, setIntent] = useState<Intent>('none');
   const [picks, setPicks] = useState<CardRef[]>([]);
 
   const view = game.room.status === 'playing' ? game.room.view : null;
   const youId = view?.youId ?? null;
+
+  /**
+   * The intent actually in force.
+   *
+   * The tap is the one decision a player does not start with a button: claiming
+   * puts them in it, and `legalActions` then reads TAP_CHOOSE. So its intent is
+   * derived from the view rather than kept in the state the buttons write, and
+   * it wins while it lasts — a claimed tap owns the table until it resolves, and
+   * the engine refuses everything else meanwhile.
+   *
+   * Without this the tap had no intent at all, and the flow was unplayable: the
+   * bar said "pick the card that matches the top of the pile" while every card
+   * on the table stayed inert, so a claimed tap could only ever end on the 8s
+   * deadline — which counts as a wrong tap, and a penalty card.
+   */
+  const tapIntent: Intent =
+    view?.tap?.playerId === youId
+      ? view.tap.awaitingPlacement
+        ? 'tapPlace'
+        : 'tapChoose'
+      : 'none';
+  const activeIntent: Intent = tapIntent === 'none' ? intent : tapIntent;
+
+  /**
+   * A card the player was just shown has to be closed before they act again.
+   *
+   * The notice ("Remember it") is the only record they get of what they saw, and a
+   * move made while it is still open is a move made before the card has been
+   * taken in. So until it is closed no turn action is offered and no card on the
+   * table can be picked.
+   *
+   * Not during the opening peek, where notices pile up by design and the Ready
+   * button has its own gate, and not during a tap: that is a race against a
+   * deadline and must never wait on a dialog. A King's swap decision is exempt in
+   * `ActionBar` for the opposite reason: the two cards are what it is a decision
+   * about, and closing the notice would take them away.
+   */
+  const blocked = game.peeks.length > 0 && view?.phase !== 'peek' && tapIntent === 'none';
 
   const can = useCallback(
     (action: string) => (view ? view.legalActions.includes(action as never) : false),
@@ -37,6 +92,8 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
   const selectable = useMemo<Map<PlayerId, number[]>>(() => {
     const map = new Map<PlayerId, number[]>();
     if (!view || !youId) return map;
+    // Nothing on the table is pickable while a notice is still open.
+    if (blocked) return map;
     const occupied = (id: PlayerId) =>
       (view.players.find((p) => p.id === id)?.hand ?? [])
         .filter((s) => s.occupied)
@@ -44,7 +101,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
 
     const own = occupied(youId);
 
-    switch (intent) {
+    switch (activeIntent) {
       case 'swap':
       case 'finalSwap':
       case 'tapPlace':
@@ -68,16 +125,16 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
       default:
         return map;
     }
-  }, [view, youId, intent]);
+  }, [view, youId, activeIntent, blocked]);
 
   const onSlotClick = useCallback(
     (ref: CardRef) => {
-      if (!view) return;
+      if (!view || blocked) return;
       const send = game.send;
       setIntent('none');
       const first = picks[0];
 
-      switch (intent) {
+      switch (activeIntent) {
         case 'swap':
           send({ type: 'SWAP', playerId: view.youId, slot: ref.slot });
           break;
@@ -133,7 +190,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
       }
       setPicks([]);
     },
-    [game.send, view, intent, picks],
+    [game.send, view, activeIntent, picks, blocked],
   );
 
   const setIntentAndClear = useCallback((next: Intent) => {
@@ -157,6 +214,15 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
    * ask for, and a 40px correction does not want 300ms of animation on top.
    */
   const ownCardsRef = useRef<HTMLElement>(null);
+  /**
+   * The peek tray is open, which takes about 180px off the board.
+   *
+   * Not just a render condition: the row the tray pushes off the bottom is the
+   * row the player was told to look at, so it is a trigger for the scroll below
+   * as well. The board is its own scroll region and the dock sits outside it,
+   * so this scroll can never push the tray out of reach.
+   */
+  const dockPanel = game.peeks.length > 0;
   const acting =
     view?.phase === 'peek' ||
     view?.turnPlayerId === youId ||
@@ -167,7 +233,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
   useEffect(() => {
     if (!acting) return;
     ownCardsRef.current?.scrollIntoView({ block: 'nearest' });
-  }, [acting, ownCardCount]);
+  }, [acting, ownCardCount, dockPanel]);
 
   if (!view || !youId) {
     return (
@@ -182,8 +248,30 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
   const me = view.players.find((p) => p.id === youId);
   const turnPlayer = view.players.find((p) => p.id === view.turnPlayerId);
 
+  /** The cards in this hand the player may act on right now. */
+  const ownSelectable =
+    selectable.get(youId) ?? (view.phase === 'peek' ? view.peekableSlots : []);
+
+  /**
+   * The cards to draw attention to: this hand, and only when the question is
+   * about this hand.
+   *
+   * "Which of these" is the whole question for a swap, the peek, a look at your
+   * own card, a Queen's half of the swap, and the card you drop into a hole you
+   * just made. It is not the question for a tap or a blind swap, where the whole
+   * table is in play — and there the cue does real harm rather than none: a
+   * player who sees only their own cards lit may conclude only their own cards
+   * are pickable, fail the tap, and take a penalty card for being misled by us.
+   *
+   * So an empty set is the honest answer for those, not a whole-table pulse.
+   */
+  const ownHandDecided =
+    activeIntent === 'none' ? view.phase === 'peek' : OWN_HAND_DECISIONS.has(activeIntent);
+  const liveSlots = ownHandDecided ? ownSelectable : [];
+
   return (
     <main className="kb-table kb-table--game">
+      <CardFlights view={view} />
       <header className="kb-topbar">
         <span className="kb-chip kb-chip--dark">Room {view.roomCode}</span>
         <span className="kb-label">
@@ -230,6 +318,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
                   <Hand
                     slots={p.hand}
                     label={`${p.name}'s cards`}
+                    ownerId={p.id}
                     compact
                     selectableSlots={selectable.get(p.id) ?? []}
                     onSelect={(slot) => onSlotClick({ playerId: p.id, slot })}
@@ -252,7 +341,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
                   {view.drawPileCount}
                 </span>
               </div>
-              <div className="kb-pile__stack">
+              <div className="kb-pile__stack" data-flight="draw">
                 {view.drawPileCount > 0 ? (
                   <Card faceDown label={`draw pile, ${view.drawPileCount} cards left`} />
                 ) : (
@@ -268,19 +357,24 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
                   {view.discardCount}
                 </span>
               </div>
-              {view.discardTop ? (
-                <Card card={view.discardTop} label="top of the discard pile — tap to match" />
-              ) : (
-                <Card empty />
-              )}
+              <div className="kb-pile__stack" data-flight="discard">
+                {view.discardTop ? (
+                  <Card card={view.discardTop} label="top of the discard pile — tap to match" />
+                ) : (
+                  <Card empty />
+                )}
+              </div>
             </div>
 
             <div className="kb-pile">
               <div className="kb-pile__head">
-                <span className="kb-label">In hand</span>
+                <span className="kb-label">Drawn card</span>
               </div>
+              <div className="kb-pile__stack" data-flight="drawn">
               {view.drawn?.isYours && view.drawn.card ? (
-                <Card card={view.drawn.card} label="the card you drew" />
+                // The card you drew is the live one while you hold it: it is the
+                // only thing on the table you are deciding about.
+                <Card card={view.drawn.card} label="the card you drew" live />
               ) : view.drawn ? (
                 <Card faceDown label="a card drawn by another player" />
               ) : view.heldCard?.isYours && view.heldCard.card ? (
@@ -288,6 +382,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
               ) : (
                 <Card empty />
               )}
+              </div>
             </div>
           </div>
 
@@ -295,12 +390,14 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
             <h3 className="kb-label">
               {/* Kept to one line: it wrapped at 390px, and a wrapped heading
                   costs a whole row of cards off the bottom of the screen. */}
-              {me?.name} {view.revealed ? '' : '· bottom two are 3 and 4'}
+              {me?.name} {view.phase === 'peek' ? '· peek at cards 3 and 4' : ''}
             </h3>
             <Hand
               slots={me?.hand ?? []}
               label="your cards"
-              selectableSlots={selectable.get(youId) ?? (view.phase === 'peek' ? view.peekableSlots : [])}
+              ownerId={youId}
+              selectableSlots={ownSelectable}
+              liveSlots={liveSlots}
               selectedSlot={picks[0]?.playerId === youId ? (picks[0]?.slot ?? null) : null}
               onSelect={(slot) => {
                 if (view.phase === 'peek' && selectable.get(youId) === undefined) {
@@ -317,7 +414,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
       </div>
 
       <p className="kb-footnote">
-        Bottom two are slots 3 and 4. Card positions never move — that is the memory game.
+        Peek at cards 3 and 4 at the start. Card positions never move — that is the memory game.
       </p>
 
       {/* Everything you can do, and anything the server just refused, in one bar
@@ -336,13 +433,14 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
           view={view}
           isYourTurn={view.turnPlayerId === youId}
           can={can}
-          intent={intent}
+          intent={activeIntent}
           onIntent={setIntentAndClear}
           onDraw={(from) => game.send({ type: 'DRAW', playerId: youId, from })}
           onDiscard={() => game.send({ type: 'DISCARD', playerId: youId })}
           onKaboo={() => game.send({ type: 'CALL_KABOO', playerId: youId })}
           onCounterKaboo={() => game.send({ type: 'COUNTER_KABOO', playerId: youId })}
           onReady={() => game.send({ type: 'READY', playerId: youId })}
+          mustAcknowledge={game.peeks.length > 0}
           onSkipEffect={() => game.send({ type: 'EFFECT_SKIP', playerId: youId })}
           onKingDecide={(swap) => game.send({ type: 'EFFECT_KING_DECIDE', playerId: youId, swap })}
           onFinalDecline={() => game.send({ type: 'FINAL_DECLINE', playerId: youId })}

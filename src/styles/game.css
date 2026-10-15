@@ -178,19 +178,37 @@ body {
 
 /* --- Hand ----------------------------------------------------------------- */
 .kb-hand {
-  display: grid;
-  /* Exactly two columns: the 2x2 square is the thing players memorise, so the
-     layout must never reflow it into a different shape. Extra cards (penalties)
-     wrap onto a third row rather than changing the column count. */
-  grid-template-columns: repeat(2, auto);
+  /* One row, side by side, that scrolls sideways when it runs out of room.
+     Players still remember WHERE a card is, so slots are never compacted or
+     reordered; a penalty card simply extends the row instead of wrapping into a
+     shape nobody has learned. The first four fit a phone without scrolling. */
+  display: flex;
+  flex-wrap: nowrap;
   gap: var(--space-2);
-  justify-content: start;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  /* Room for the card shadows, the selected ring and the hover lift, none of
+     which may be clipped by the scroll box (`overflow-x` makes `overflow-y`
+     clip too). */
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  scroll-padding-inline: var(--space-2);
   /* Never let a taller row stretch a card: the aspect ratio is the card. */
-  align-items: start;
+  align-items: flex-start;
+}
+
+/* Your own hand is drawn larger than an opponent's: with the four cards in one
+   row there is width for it, and it is the row you act on. 19vw is the biggest
+   that still fits four cards and their gaps in a 320px-wide phone. */
+.kb-you .kb-hand {
+  --card-w: clamp(56px, 19vw, 88px);
 }
 
 .kb-hand__cell {
   position: relative;
+  flex: 0 0 auto;
+  scroll-snap-align: center;
 }
 
 .kb-hand__index {
@@ -235,6 +253,138 @@ button.kb-card:disabled {
 .kb-card:focus-visible {
   outline: var(--focus-width) solid var(--c-primary);
   outline-offset: 2px;
+}
+
+/* --- Card: pointer affordance --------------------------------------------
+ * `pointer: fine` as well as `hover: hover`, because :hover is not "a pointer
+ * is over this" on a touch screen — it is "this was the last thing tapped", so
+ * a card would stay lit up under nobody's finger for the rest of the game.
+ *
+ * Only on a real control: a face-down card you may not tap is a <div>, and a
+ * card that does nothing should not look like it does.
+ *
+ * The lift is `translate` throughout so it composes with `.kb-card--selected`'s
+ * own lift instead of replacing it. */
+@media (hover: hover) and (pointer: fine) {
+  button.kb-card:enabled:hover {
+    translate: 0 -4px;
+  }
+
+  /* Bigger shadow as well — except on a selected card, whose blue ring is the
+     record of what the player just chose. `:where()` around the exclusion keeps
+     it worth zero specificity, so the press rule below still wins a tie in the
+     ordinary cascade rather than needing an `!important`. */
+  button.kb-card:enabled:hover:not(:where(.kb-card--selected)) {
+    box-shadow: var(--shadow);
+  }
+}
+
+/* Press = move into the shadow, the same signature as `.kb-btn`. The card's
+   shadow is 2px, so the offset is 2px. */
+button.kb-card:enabled:active {
+  box-shadow: none;
+  translate: 0 0;
+}
+
+/* --- Card: the live one ---------------------------------------------------
+ * The card the current decision is about: during the peek, the two cards you
+ * are being shown; later, the cards you may tap for the move in progress.
+ *
+ * A ring, not a lift or a scale. It has to be visible at a glance on a card
+ * that is already a 2px-ruled block with a shadow, and it must not move: the
+ * 2x2 square is what players memorise, so a live card that steps out of the
+ * grid makes the one layout the game depends on ragged.
+ *
+ * The ring pulses because a static one is easy to miss at the edge of vision,
+ * and it animates box-shadow — a paint per frame — which is only acceptable
+ * because there are at most a handful of live cards and they are by definition
+ * the ones being looked at. The rest of the app's motion is one-shot; this is
+ * the deliberate exception, with the KABOO button. */
+.kb-card--live {
+  box-shadow: 0 0 0 3px var(--c-highlight), var(--shadow);
+  animation: kb-live 1.6s var(--ease) infinite;
+}
+
+@keyframes kb-live {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--c-highlight), var(--shadow);
+  }
+  50% {
+    box-shadow: 0 0 0 7px var(--c-highlight), var(--shadow);
+  }
+}
+
+/* Reduced motion: the ring is information and stays, the pulse is decoration
+   and does not — same rule the rest of the app follows, which is that the
+   state is kept and only the movement is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .kb-card--live {
+    animation: none;
+    box-shadow: 0 0 0 3px var(--c-highlight), var(--shadow);
+  }
+
+  button.kb-card:enabled:hover {
+    translate: none;
+  }
+}
+
+/* --- Card: where it just went ----------------------------------------------
+ * A ring on the card that has just arrived, for about a second, so that "which
+ * card changed?" always has an answer — including when the movement itself was
+ * missed, skipped for reduced motion, or happened in a hand off to the side.
+ * Blue, not the highlight yellow: yellow is "act on this", blue is "this just
+ * moved". It fades out rather than switching off. */
+.kb-card--landed {
+  animation: kb-landed var(--dur-landed) var(--ease) both;
+}
+
+@keyframes kb-landed {
+  0%,
+  55% {
+    box-shadow: 0 0 0 4px var(--c-primary), var(--shadow-sm);
+  }
+  100% {
+    box-shadow: 0 0 0 0 var(--c-primary), var(--shadow-sm);
+  }
+}
+
+/* After the rule it overrides, not before: same specificity, so order decides.
+   The ring stays and the fade goes — "this card just changed" is information, the
+   fading of the ring is decoration. */
+@media (prefers-reduced-motion: reduce) {
+  .kb-card--landed {
+    animation: none;
+    box-shadow: 0 0 0 4px var(--c-primary), var(--shadow-sm);
+  }
+}
+
+/* --- Card flights ----------------------------------------------------------
+ * The ghost that carries a card across the table (see `CardFlights.tsx`). It is
+ * a real `.kb-card` so it is the same frame, border and shadow as the card it
+ * stands in for, then sized and positioned inline from the two places it is
+ * travelling between. Fixed to the viewport and above the dock so a card can
+ * cross the whole screen, and inert so it never takes a tap meant for the table
+ * under it. */
+.kb-card.kb-ghost {
+  position: fixed;
+  margin: 0;
+  z-index: 60;
+  pointer-events: none;
+  box-shadow: var(--shadow);
+  will-change: transform;
+}
+
+/* One face of the ghost. Two are stacked when a card turns over on the way. */
+.kb-ghost__layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--c-bg);
+}
+
+.kb-ghost__layer--back {
+  background: var(--c-ink);
 }
 
 /* The face image overshoots its frame by 4%, so the deck's own rounded border
@@ -357,6 +507,9 @@ button.kb-card:disabled {
  * the reason it no longer fitted. */
 .kb-peeks {
   --card-w: clamp(40px, 11vw, 56px);
+  /* It arrives rather than appears: a notice that pops in at the bottom of the
+     screen is easy to miss, and this one has to be closed before the next move. */
+  animation: kb-rise var(--dur-flip) var(--ease) both;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -369,6 +522,13 @@ button.kb-card:disabled {
   border: var(--bw-2) solid var(--c-ink);
   box-shadow: var(--shadow);
   padding: var(--space-2) var(--space-3);
+}
+
+@keyframes kb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(var(--space-3));
+  }
 }
 
 .kb-peeks__head {
@@ -665,6 +825,33 @@ button.kb-card:disabled {
   .kb-dock {
     margin-top: var(--space-4);
     padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom));
+  }
+
+  /* Laid out in a row, not a column, once there is width for it.
+   *
+   * With the peek tray open the stacked dock is about 300px of a 900px screen,
+   * and every one of those pixels comes out of the table's scroll box: the
+   * centre column went to 421px for 678px of content, which is tall enough to
+   * push the pile headings and the whole opposing hand out of view in exactly
+   * the state the tray exists to serve. Side by side the same content costs half
+   * the height.
+   *
+   * `flex-wrap` and the auto widths are the safety net: a desktop window too
+   * narrow for tray plus buttons falls back to the stacked form by itself, so
+   * there is no width at which this is worse than what it replaces. */
+  .kb-dock {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-4) var(--space-5);
+  }
+
+  .kb-dock .kb-error,
+  .kb-dock .kb-peeks,
+  .kb-actions {
+    width: auto;
+    flex: 0 1 auto;
   }
 
   /* The side columns come back. */

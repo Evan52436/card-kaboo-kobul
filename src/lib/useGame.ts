@@ -81,8 +81,30 @@ function labelFor(event: DeliveredEvent, viewerId: PlayerId): string {
   if (event.type === 'drew') return 'the card you drew';
   if (event.type === 'revealed') return 'the card you were given';
   if (event.type === 'peeked') {
-    const who = event.playerId === viewerId ? 'your' : `${String(event.playerId)}'s`;
-    return `${who} card`;
+    const mine = event.playerId === viewerId;
+    const who = mine ? 'your' : `${String(event.playerId)}'s`;
+    // Named by slot, 1-based, because that is how the table counts them: every
+    // hand prints 1..4 under its cards and the footnote calls the bottom two
+    // "3 and 4". Two notices both reading "your card" was the whole of what the
+    // peek phase told you about which was which, and it told you nothing.
+    //
+    // Bare "slot 3" for your own card, because the tray's own heading already
+    // says whose it is and this is the ONE case where two notices arrive at
+    // once. The caption is what sets the tray's width — a 13ch caption makes a
+    // 94px item around a 40px card, which was 21px too wide for the head and
+    // the cards to share a row on a 360px phone, so the head wrapped above them
+    // and the tray went from 122px tall to 208. That cost the bottom row of the
+    // player's own hand, which is the row the whole phase is about.
+    //
+    // Only `peeked` gets a slot. A Queen's `revealed` also carries one, but it
+    // is the slot the card came FROM — the card is in the viewer's own hand by
+    // then, so printing that number would point at the wrong card.
+    //
+    // `EngineEvent` carries an index signature, so the field is `unknown` and
+    // has to be narrowed. Falls back to the bare label rather than printing
+    // "slot NaN" if a future event ever arrives without one.
+    if (typeof event.slot !== 'number') return `${who} card`;
+    return mine ? `slot ${event.slot + 1}` : `${who} card · slot ${event.slot + 1}`;
   }
   if (event.type === 'effectUsed') {
     const target = typeof event.targetPlayerId === 'string' ? event.targetPlayerId : null;

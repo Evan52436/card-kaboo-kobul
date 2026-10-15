@@ -34,7 +34,7 @@
 | **M4** | Vercel deploy, polish, mobile QA | 🔴 **blocked on the owner** — needs Upstash + Ably accounts and `vercel login` (§10) |
 | **M5** | Up to 8 players: the 3–8 seat layout around the table | ⚪ **not started** — the engine and transport support 8 today |
 
-`bun run verify` is green: **210 tests across 12 files**, typecheck and lint clean, `bun run build`
+`bun run verify` is green: **243 tests across 15 files**, typecheck and lint clean, `bun run build`
 green, and `scripts/smoke.mjs` passes over real HTTP against a running server.
 
 **The table is a real deck.** Faces are PNGs from a public-domain vector deck under
@@ -46,9 +46,14 @@ is the only thing that ever scrolls, and only when it has to.
 arrived as a `RoomView` projected for one seat, so a card that player may not see was never
 transmitted. Actions POST, state lives behind `StateStore`, each player holds a private channel.
 
-**Not yet proven:** the Redis and Ably adapters (and `src/store/env.ts`, `src/server/sessionKey.ts` + `tests/store-env.test.ts`, `tests/session-key.test.ts`, added 2026-10-15 without a test run: run `bun run verify` and refresh the counts above) — written against the documented APIs, but no request
-has crossed a network. Effect targeting and every `ActionBar` sub-flow are implemented and
-unit-tested but have had **no human finger on them**.
+**Not yet proven:** the Redis and Ably adapters (and `src/store/env.ts`, `src/server/sessionKey.ts` +
+`tests/store-env.test.ts`, `tests/session-key.test.ts`) — written against the documented APIs, but no
+request has crossed a network. The peek and tap sub-flows, the opening-peek Ready gate, the
+hover/press/live card states and the hand-row layout have all been driven through a real browser
+(2026-10-15, Chromium via Playwright; numbers in §9). **The effect sub-flows (7/8/9/10/J/Q/K
+targeting) still have had no finger on them** — and that gap is exactly where the tap bug below was
+hiding. The card-flight planner has unit tests and runs on the pages that were driven, but no flight
+has been *watched* land.
 
 ---
 
@@ -125,11 +130,11 @@ src/
     api/rooms/…   seven route handlers, three lines each, `runtime='nodejs'` + `force-dynamic`
     layout.tsx    root layout; imports both stylesheets, sets the viewport
     icon.svg      the favicon: ink square, white keyline, yellow K
-  components/   Card (the real deck, plus `cardFile` and `cardName`) · Hand (2×2, never compacted) ·
+  components/   Card (the real deck, plus `cardFile` and `cardName`) · Hand (one scrolling row, never compacted) · CardFlights (ghost cards travel between places) ·
                 ActionBar (one Action per button, driven by legalActions) ·
                 Panels (StatusPill, Scoreboard, GameLog, PeekTray)
   lib/          api.ts (the only `fetch`) · session.ts (the seat + its React store) · stream.ts
-                (push when available, polling always) · useGame.ts (the hook) · random.ts
+                (push when available, polling always) · useGame.ts (the hook) · flights.ts (pure: which cards moved between two snapshots) · random.ts
   styles/       tokens.css ← the ONLY place raw values are defined. game.css is layout only.
 public/cards/   54 PNGs (52 + 2 jokers) at 264×384, ~668 KB total, plus a README with the licence
 scripts/cards.mjs   re-renders public/cards/ from the pinned upstream commit (`bun run cards`)
@@ -177,7 +182,7 @@ event queue being drained.
 Values: Ace=1, 2–10 face value, J/Q/K=10, **RED kings = −1** (both red kings).
 
 **Deal & peek.** 4 face-down cards per player in a 2×2 square. Slots are fixed and **never
-compacted** — players remember positions. Slots `0,1` = far row, `2,3` = **near/bottom row**
+compacted** — players remember positions. Slots `0,1` = far row, `2,3` = **near/bottom row** (the app draws the four in one row, so these read as cards 3 and 4)
 (`PEEK_SLOTS`). Each player may look at their bottom two **once** each, then must remember them —
 `PEEK` does not end the phase; each player's `READY` does.
 
@@ -283,6 +288,13 @@ after ~12h of no writes** (Redis `EXPIRE`, refreshed on every write).
 | 2026-10-15 | **A peek notice is kept only for the round it arrived in** (`Peek.round`, pruned on insert) | The tray only ever grew: `setPeeks((prev) => [...prev, …])` with no bound meant a player who never tapped *Remember it* accumulated every peek and every draw of the whole game — measured at three cards after one turn, and a dock that eats the screen by round two. Nothing is lost by dropping them at a round boundary: at the reveal every card is face-up, so the reminder has stopped being information | A hard cap with a "+N earlier" note (silently withholds cards the player was shown); clearing on turn change (wipes the opening peeks, the only cards anyone legitimately saw); an effect on the round number (a second place the tray changes shape, and a lint error) |
 | 2026-10-15 | **Redis credentials are found by suffix and paired by prefix, in `src/store/env.ts`** | Vercel's Upstash integration names the variables `<PREFIX>_KV_REST_API_URL`/`_TOKEN` (the prefix is picked at install: `STORAGEKOBUL` here), not `UPSTASH_REDIS_REST_*`. Recognising only the latter would make a correct deploy silently fall back to the in-process `Map`, which looks fine for one player and splits rooms across serverless instances. Matching on the suffix means nothing has to be renamed in the Vercel dashboard. The URL and token must share a prefix (never mix two integrations), only `KV_REST_API_TOKEN` matches (the `…_READ_ONLY_TOKEN` ends differently, and the store writes), and keys are sorted so the choice is deterministic. Explicit `UPSTASH_REDIS_REST_*` still wins | Renaming the variables by hand in the dashboard (a manual step to forget on every re-install); hard-coding `STORAGEKOBUL_` (breaks on re-install); taking the first `*_TOKEN` found (could be the read-only one) |
 | 2026-10-15 | **The session key is `ROOM_SECRET`, else derived from the Redis token (`src/server/sessionKey.ts`); the old "throw in production if Redis is set but ROOM_SECRET is not" guard was removed** | Symptom: players were kicked from the room seconds into a game. Cause: with no shared key each serverless instance minted its own random one, so a session signed by one instance failed verification on the next, which the client treats as a lost seat. The old guard could not catch it, because it only looked for the `UPSTASH_REDIS_REST_*` names and Vercel's integration uses `<PREFIX>_KV_REST_API_*`. Every instance reads the same Redis token, so every instance derives the same key (HMAC with a fixed label, so the key does not reveal the token) and nothing needs setting in the Vercel dashboard. Trade-off: one secret serves two purposes; a leaked Redis token already exposes every room, so nothing new is exposed | Requiring `ROOM_SECRET` in the dashboard (the owner asked not to touch Vercel); keeping the throw and widening its env check (turns the misconfiguration into a loud 500 but still needs the manual step); a random key per instance (the bug) |
+| 2026-10-15 | **The hand is one row that scrolls sideways, not a 2×2 square** | Owner's report: the table felt static and confusing, and the square made it hard to see where a drawn card went. A row reads left to right, gives the player's own cards more width (drawn larger than an opponent's: `19vw`, capped at 88px, which fits four cards on a 320px phone) and saves about 48px of height on a phone. It still never compacts or reorders slots, so position is still the memory game; a penalty card extends the row. The first four fit without scrolling | Keeping the grid and animating it (the owner prefers the row); wrapping a long hand onto a second row (a shape nobody has learned) |
+| 2026-10-15 | **Card movement is shown by `src/lib/flights.ts` (pure: compares two snapshots) + `CardFlights.tsx` (draws ghost cards)** | The state is already correct when a snapshot arrives; the ghost only shows where a card came from. The planner reads only what the viewer may already see (counts, the public discard top, `occupied`, `gen`), so it adds no information, and it recognises a pattern or draws **nothing**: a poll gap can swallow several moves, and a wrong animation tells the player a card went somewhere it did not. A layout effect hides the destination before paint (otherwise the card flashes into place and only then flies). Anchors are static (`data-flight` on the three piles and every slot), so both rectangles are read from the new DOM. A ring (`.kb-card--landed`) stays on the arrived card for about 1.2s and is kept under `prefers-reduced-motion`, where the flight itself is skipped | Animating the real elements (a slot's card re-mounts whenever `gen` changes, so there is no stable element to move); an animation library (a dependency for one tween); animating only the destination (cannot show where a card came from) |
+| 2026-10-15 | **No turn action until the card preview is closed** (`blocked` in `GameScreen`, `closeFirst` in `ActionBar`) | Owner's request. "Remember it" is the only record of what a player saw, so moving on before closing it is moving on before the card was taken in. While a notice is open the turn buttons are disabled with a stated reason and no table card is pickable. **Exempt:** the opening peek (notices pile up by design, and Ready has its own gate), taps (a race against a deadline), and a King's swap decision (closing the notice would remove the two cards the decision is about). The turn deadline still runs, so an unclosed notice cannot strand a table | Gating the tap (loses the race to a dialog); gating the King decision (decide blind); hiding the buttons instead of disabling them (no reason shown) |
+| 2026-10-15 | **Ready is disabled, with the reason printed, while a peek notice for the opening pair is still open** — a *client-side* gate, deliberately, and separate from `blocked` above (which exempts the peek) | Owner's request: "make sure people can't click ready before they close the 2 cards they're seeing at the start." Looking at your own two cards *is* the peek phase, so Ready is the step that throws the look away. A client-side gate is the only honest one available: notices are transient reveals the server keeps no record of (§9.2), so there is no dismissal for the server to enforce; and the 45s peek deadline still readies everyone, so it cannot strand a table. **Still open:** a player who never peeks at all is ungated — closing the notices presupposes there are some. Forcing the peek would make it mandatory, which is a rule change and is raised in §6, not made here | Server-side enforcement (needs stored dismissal state, which §9.2 forbids); a toast that only warns (the owner asked for "can't", not "is discouraged"); hiding the button (a disabled control that says why beats a missing one) |
+| 2026-10-15 | **The live-card cue is a ring, not a lift or a pulse of the whole card** (`.kb-card--live`, a 3px→7px `--c-highlight` ring) | The cue means "this is what the current decision is about", and it has to survive being one of four cards the player is memorising. A lift would break the row's baseline and make the hand look ragged for as long as the decision lasts; a scale would change the card's size, which is the one thing that carries position; only a ring leaves the frame exactly where it was. `--c-highlight` because KABOO already owns that colour as "the loudest thing on screen". Set on `Card` only, and chosen in `GameScreen` — see the two traps in §9 | An outline (`outline` is the focus ring's job — two rings on a focused card, and the focus one must win); a border (changes the layout box); a fully lit background (reads as face-up) |
+| 2026-10-15 | **`.kb-card--selected` lifts with `translate`, and hover/press add to it with `translate` too — never `transform`** | `translate` and `transform` are *separate properties that compose*, so `--selected`'s `translate: 0 -2px` and the hover rule's `translate: 0 -4px` (and `:active`'s `translate: 0 0`) resolve against each other in the ordinary cascade instead of one silently erasing the other. With a single `transform` the last rule to win would decide, and the press state would lose its selected lift. `transform` is left free for a future rotate/scale. Same reason the reduced-motion block resets `translate` **and** `transform` | One `transform` property (states overwrite rather than compose); `top`/`margin` (animates layout every frame) |
+| 2026-10-15 | **A claimed tap's intent is derived from `view.tap`, not from button state** — `GameScreen`'s `activeIntent` is `tapPlace`/`tapChoose` while `view.tap.playerId === youId`, and wins over the `none` a button would have set | **A real, pre-existing bug that made the tap unplayable.** A tap is the one decision a player does not start with a button: the claim puts them in it and `legalActions` then reads `TAP_CHOOSE`. Nothing anywhere set `intent` to `'tapChoose'`, so after claiming, every card on the table stayed inert while the bar said "pick the card that matches the top of the pile" — measured in the browser as `ownTappable: 0, allTappable: 0` against a server advertising `['TAP_CHOOSE']`. The tap could then only end on the 8s deadline, which counts as a *wrong tap*: a penalty card, for a button that could not work. After: `ownTappable: 4, allTappable: 8` | A `onIntent('tapChoose')` set in an effect when the tap arrives (an effect that exists only to mirror state the view already carries, and one render late); putting the tap's two steps in `ActionBar`'s `Intent` state (the tap can arrive from another player's claim on your behalf) |
 
 ---
 
@@ -319,14 +331,22 @@ the motion signature.
 
 **Component classes** (defined in `tokens.css`; components apply them, never raw values):
 `kb-surface`, `kb-header`, `kb-btn` (`--primary` / `--danger` / `--kaboo`), `kb-chip`
-(`--dark` / `--soft`), `kb-title`, `kb-label`, `kb-card` (`--down` / `--selected` / `--empty`),
-`kb-table`. `game.css` is layout only and defines no raw values.
+(`--dark` / `--soft`), `kb-title`, `kb-label`, `kb-card` (`--down` / `--selected` / `--live` /
+`--landed` / `--dimmed` / `--empty`), `kb-table`. `game.css` is layout only and defines no raw values.
 
 Three rules the class bodies encode, so read them there before overriding: **KABOO** is highlight
 yellow with black text and an `8px` shadow (never white on yellow — it is 1.3:1); contrast is
 `#000` on `#fff`, `#193cb8` on `#dbeafe` (7.4:1), or black on `--c-highlight` (17:1);
 `prefers-reduced-motion` collapses `--dur` to `0ms` rather than removing transitions, because card
 movement is the game's information channel.
+
+**Card interaction states**, all in the `game.css` card block, and all four are needed at once:
+*rest* (`--shadow-sm`) → *hover* (lift `4px`, `--shadow`) → *press* (into the shadow: `box-shadow:
+none`, `translate: 0 0`) → *live* (the yellow ring, §7). Hover is gated on
+`@media (hover: hover) and (pointer: fine)`; press and live are not, because a touch screen has both.
+Under `prefers-reduced-motion` the **state survives and the movement goes**: `--dur` is `0ms`, the
+hover lift and the press translation are set to `none`, and `--live` keeps its static `3px` ring with
+`animation: none` — a player who asked for no motion still has to be told which card is live.
 
 **Card art.** `public/cards/{rank}{suit}.png` (`AS`…`KD`, plus `Joker1`/`Joker2`), **public domain**
 — Byron Knoll's vector deck, redistributed by `notpeter/Vector-Playing-Cards`; the render script
@@ -425,31 +445,48 @@ splits in two.
   no unit test could: the stretched card, and an 844px screen overflowing by 167px. Numbers beat
   guesses: a wasted 12px of heading margin is 48px across two rows, which is the difference between
   a hand you can see and one you cannot.
-- **Never change the 2×2 hand's shape to save space.** The square *is* the memory aid — cards are
-  never compacted and slots never reflow. Trim gaps, labels and chrome instead.
+- **The hand is ONE row, side by side, scrolled sideways (owner's call, 2026-10-15; it was a 2×2 square).** Cards are never compacted and slots never reflow, so position still carries the memory game; extra cards extend the row instead of wrapping. Slots 3 and 4 (index 2 and 3) are still the peek pair, now just the last two of the first four. Do not bring the grid back without asking the owner.
+- **Every entry in `legalActions` that needs a *slot* chosen must have an `Intent` reachable either from a button or from the view itself.** `ActionBar`'s `Intent` state only knows what a *button* set, and three sub-flows need no button to start: a claimed tap (`TAP_CHOOSE`, derived in `GameScreen` from `view.tap`), and the second half of any two-step choice. This is the shape of the tap bug (§7): the server advertised `TAP_CHOOSE`, the UI had no path to it, and the button-less state looked like "nothing to do" rather than an error. When you add an action, ask **who sets the intent** — and if the answer is "nobody, it just happens", derive it from the projection.
+- `:hover` is gated behind `@media (hover: hover) and (pointer: fine)`, and that is not optional. On a touch screen a `:hover` rule matches whatever was **tapped last**, so an ungated card hover leaves a card lit under nobody's finger — and it stays lit until another tap. Verified both ways in the browser: on a `hasTouch: true` context `matchMedia('(hover: hover)')` is `false` and hover does nothing.
+- **The peek tray's caption sets the tray's width, which sets the tray's height.** Each notice is a card with a caption under it, so a longer caption widens every item: the 13ch form of the own-card label (`your card · slot 3`) made a 94px item around a 40px card, which was 21px too wide for the heading and the cards to share one 360px row — the heading wrapped above them and the tray went **122px → 208px**, which cost the player the bottom row of the hand the phase is about. Shortening it to `slot 3` brought it to 102px. Measure the tray, not the card, when changing a notice label.
+- **The board shrinks when the peek tray opens, and the bottom row of the hand is the row the phase is about.** The "scroll your own cards into view" effect must depend on the tray being open as well as on whose turn it is — the tray opening changes no other dependency, so without it the board gets shorter and the row falls off the bottom silently. Measured against the **viewport**; measuring against the column box reports "0 clipped" while the cards are behind the dock.
 ---
 
 ## 10. Next steps
 
-**Next steps** (rewritten 2026-10-15, after the deck-and-dock pass):
-1. **M4 — real hardware.** The layout is now measured (no page scroll at 390×844; the board, and each
-   desktop column, scroll only when they must), but only ever in headless Chromium at one viewport.
-   A real phone brings the home indicator, the URL bar and `env(safe-area-inset-*)`, and a real
-   finger has still never touched an effect sub-flow. Check: 2×2 stays 2×2, the dock clears the home
-   indicator, the peek tray's *Remember it* is reachable one-handed.
-2. **M4 — deploy. Blocked on the owner, not on code.** Needs a free Upstash database and an Ably app,
-   plus `vercel login` run by the user (`! vercel login` in this session works). Then set the four
-   variables from `.env.example` in the Vercel dashboard and `vercel --prod`.
-3. **M4 — prove the adapters.** Redis and Ably have never crossed a network. Deploy first, then play
-   from two separate networks: a phone on cellular and a laptop on wifi. Confirm near-instant moves,
-   a peek visible **only** to the player who earned it, and the tap race showing "too late" to the
-   loser. Until then, treat §2's "M3 done" as provisional.
-4. **M4 — reconnection.** Refresh mid-turn and confirm the stored session restores the same seat.
-   Then background a phone for two minutes and confirm the tab catches up on the way back.
-5. **M5 — 3 to 8 seats.** Opponents currently render in a scrolling row. The brief wants 3–8 seated
+**Next steps** (rewritten 2026-10-15, after the peek-gate / card-state pass):
+1. **Drive the effect sub-flows (7/8/9/10/J/Q/K) in a browser.** These are the last interaction paths
+   with no finger on them, and the tap bug (§7) was found the moment one was driven — the engine suite
+   is green for all of them, which is exactly what made the tap bug invisible. Check: each button
+   reaches its state, each pick lands on the card it named, and *Skip* is offered wherever the engine
+   accepts it.
+2. **M4 — deploy. Blocked on the owner, not on code.** A free Upstash database and an Ably app, plus
+   `vercel login` run by the user (`! vercel login` in this session works). Then set the variables from
+   `.env.example` in the Vercel dashboard and `vercel --prod`. **Then** prove the adapters (§3): Redis
+   and Ably have never crossed a network. Until then treat §2's "M3 done" as provisional.
+3. **M4 — real hardware.** Only ever measured in headless Chromium. A real phone brings the home
+   indicator, the URL bar and `env(safe-area-inset-*)`, and a real finger is not a mouse. Check: the
+   dock clears the home indicator, the hand row stays one row and scrolls sideways, the peek tray's
+   *Remember it* is reachable one-handed, and hover does nothing on touch (§9).
+4. **M5 — 3 to 8 seats.** Opponents currently render in a scrolling row. The brief wants 3–8 seated
    around the table on desktop while keeping the mobile column; the engine and transport already
-   support 8. Note the budget: the phone layout is full at three opponents, so a fourth needs the
-   opponent row to scroll horizontally (it already can) rather than to grow.
+   support 8. Budget note: the phone layout is full at three opponents, so a fourth needs the opponent
+   row to scroll rather than to grow — and the desktop centre column already overflows at 3+.
+5. **A topbar that fits.** It wraps to two rows (82px vs 44px) below about 380px. It no longer clips
+   anything, but it costs 38px on exactly the screens that have none to spare.
 
-**Open questions for the user** (§6): #2 (how a multi-round game ends) and #5 (counter-KABOO).
-Both have working defaults, so nothing is blocked.
+**Open questions for the user:** §6 #2 (how a multi-round game ends) and #5 (counter-KABOO); plus the
+one this pass raised, which is **not** an engine flag and so is not in §6 — **should the opening peek be
+mandatory?** Ready is currently gated on *closing* the two notices, so a player who never looks at them
+is ungated (see the Ready row in §7). Making it mandatory is a rule change, so it is asked rather than
+assumed. Both of the others have working defaults, so nothing is blocked.
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

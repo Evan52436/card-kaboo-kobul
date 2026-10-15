@@ -39,7 +39,7 @@ function describe(view: Projection, viewerId: PlayerId, seconds: number | null):
   const name = (id: PlayerId | null) => view.players.find((p) => p.id === id)?.name ?? '?';
   const you = viewerId === view.youId;
 
-  if (view.phase === 'peek') return you ? 'Look at your bottom two' : `${name(viewerId)} is looking`;
+  if (view.phase === 'peek') return you ? 'Look at cards 3 and 4' : `${name(viewerId)} is looking`;
   if (view.phase === 'reveal') return 'Reveal';
   if (view.phase === 'gameOver') return 'Game over';
 
@@ -129,7 +129,7 @@ export function PeekTray({ peeks, onDismiss }: { peeks: Peek[]; onDismiss: () =>
     <aside className="kb-peeks" role="status">
       <div className="kb-peeks__head">
         <span className="kb-chip kb-chip--soft">you saw</span>
-        <button type="button" className="kb-btn kb-btn--small" onClick={onDismiss}>
+        <button type="button" className="kb-btn kb-btn--small kb-btn--primary" onClick={onDismiss}>
           Remember it
         </button>
       </div>
