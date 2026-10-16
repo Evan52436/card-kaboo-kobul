@@ -1,5 +1,5 @@
 import type { Action } from '@/engine/types';
-import { isRoomError, ROOM_ERROR_MESSAGES, SESSION_HEADER, type RoomError, type SyncResponse } from '@/protocol';
+import { isRoomError, ROOM_ERROR_MESSAGES, SESSION_HEADER, type DealOptions, type RoomError, type SyncResponse } from '@/protocol';
 import { saveSession, type StoredSession } from './session';
 
 /**
@@ -114,9 +114,13 @@ export async function joinRoom(code: string, name: string): Promise<StoredSessio
   return session;
 }
 
-/** The host deals. Everybody else is refused, and the refusal says no more than that. */
-export function startRoom(session: StoredSession): Promise<SyncResponse | RoomError> {
-  return callSync(`${room(session)}/start`, { method: 'POST', token: session.token });
+/**
+ * The host deals. Everybody else is refused, and the refusal says no more than that.
+ *
+ * `options` is the host's choice of deck count; the server ignores anything else.
+ */
+export function startRoom(session: StoredSession, options: DealOptions = {}): Promise<SyncResponse | RoomError> {
+  return callSync(`${room(session)}/start`, { method: 'POST', token: session.token, body: options });
 }
 
 /**

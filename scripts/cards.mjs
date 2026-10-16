@@ -25,6 +25,7 @@
 import { execFile } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
+import { pathOf } from './lib-webp.mjs';
 
 const run = promisify(execFile);
 
@@ -68,11 +69,14 @@ for (const name of cards) {
 
   // White background: the artwork has rounded corners and the design system has
   // none, so the corners have to be filled or they show as notches.
+  //
+  // `pathOf`, not `.pathname`: a repo checked out under a path with a space in
+  // it would otherwise hand ImageMagick a percent-encoded string it cannot open.
   const png = new URL(`${name}.png`, OUT);
-  await run('rsvg-convert', ['-w', String(WIDTH), '-b', 'white', svg.pathname, '-o', png.pathname]);
-  await run('magick', [png.pathname, '-strip', '-colors', String(COLOURS), `PNG8:${png.pathname}`]);
+  await run('rsvg-convert', ['-w', String(WIDTH), '-b', 'white', pathOf(svg), '-o', pathOf(png)]);
+  await run('magick', [pathOf(png), '-strip', '-colors', String(COLOURS), `PNG8:${pathOf(png)}`]);
 
-  const { stdout } = await run('stat', ['-c', '%s', png.pathname]);
+  const { stdout } = await run('stat', ['-c', '%s', pathOf(png)]);
   total += Number(stdout.trim());
 }
 

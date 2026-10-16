@@ -14,7 +14,8 @@
     "lint": "eslint .",
     "verify": "bun run typecheck && bun run lint && bun run test",
     "smoke": "bun scripts/smoke.mjs",
-    "cards": "bun scripts/cards.mjs"
+    "cards": "bun scripts/cards.mjs",
+    "cards:webp": "bun scripts/cards-webp.mjs"
   },
   "dependencies": {
     "@upstash/redis": "^1.39.0",

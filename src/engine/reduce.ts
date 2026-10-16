@@ -6,6 +6,7 @@ import { buildGameResult, shouldGameEnd } from './scoring';
 import {
   PEEK_SLOTS,
   addLog,
+  addLook,
   cloneState,
   createGame,
   discardTop,
@@ -152,6 +153,8 @@ function handlePeek(state: GameState, action: Extract<Action, { type: 'PEEK' }>,
     reason: 'peek',
   });
   addLog(state, { round: state.round, kind: 'peeked', actor: action.playerId });
+  // The rest of the table sees which card was lifted, never what it was.
+  addLook(state, { by: action.playerId, playerId: action.playerId, slot: action.slot, reason: 'peek' });
   return null;
 }
 

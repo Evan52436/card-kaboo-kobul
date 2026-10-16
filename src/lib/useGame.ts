@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Action, PlayerId, PublicCard } from '@/engine/types';
-import { isRoomError, type DeliveredEvent, type RoomError, type RoomErrorCode, type RoomView, type SyncResponse } from '@/protocol';
+import { isRoomError, type DealOptions, type DeliveredEvent, type RoomError, type RoomErrorCode, type RoomView, type SyncResponse } from '@/protocol';
 import { leaveRoom, sendAction, startRoom } from './api';
 import { clearSession, saveSession, sessionSnapshot, subscribeSession, type StoredSession } from './session';
 import { startStream } from './stream';
@@ -61,7 +61,7 @@ export interface Game {
   transport: 'push' | 'poll';
   busy: boolean;
   send(action: Action): void;
-  deal(): void;
+  deal(options?: DealOptions): void;
   dismissPeeks(): void;
 }
 
@@ -291,7 +291,10 @@ export function useGame(session: StoredSession, onLost?: () => void): Game | nul
     [session, run],
   );
 
-  const deal = useCallback(() => run(startRoom(session)), [session, run]);
+  const deal = useCallback(
+    (options?: DealOptions) => run(startRoom(session, options)),
+    [session, run],
+  );
 
   const dismissPeeks = useCallback(() => setPeeks([]), []);
 

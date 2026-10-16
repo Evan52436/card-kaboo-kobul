@@ -179,6 +179,29 @@ export interface LogEntry {
   text?: string;
 }
 
+/**
+ * A look at a card, as the whole table sees it happen.
+ *
+ * At a real table you can see WHICH card somebody lifts, never what it is. So
+ * this records who looked at whose slot and nothing about the face: it carries no
+ * card, by the same rule as `LogEntry`. The client animates it, which is the only
+ * way a player finds out that one of their cards is being looked at.
+ *
+ * `seq` is monotonic for the whole game (it survives rounds), so a client can ask
+ * "what is new since the last one I showed" without diffing arrays. The log
+ * cannot serve for that: it is capped and its entries have no identity.
+ */
+export interface Look {
+  seq: number;
+  /** Who looked. */
+  by: PlayerId;
+  /** Whose card it was. */
+  playerId: PlayerId;
+  slot: number;
+  /** `peek`: the opening look; `own`: a 7 or 8; `other`: a 9 or 10; `king`: one of a King's two. */
+  reason: 'peek' | 'own' | 'other' | 'king';
+}
+
 export interface PublicCard {
   id: CardId;
   rank: Rank;
@@ -188,8 +211,20 @@ export interface PublicCard {
 }
 
 export interface RuleConfig {
-  /** Include the two value-0 jokers. Default OFF. */
+  /** Include the two value-0 jokers (per deck). Default OFF. */
   jokers: boolean;
+  /**
+   * How many decks are shuffled together: 1 (52 cards) or 2 (104). Default 1.
+   * Two decks means every card exists twice, so a rank can be tapped against its
+   * twin and the draw pile lasts twice as long.
+   */
+  decks: 1 | 2;
+  /**
+   * Does the Queen's swapper get to look at the card they receive? Default OFF:
+   * a Queen swap is blind for BOTH players, so neither ever sees the card they
+   * swapped with. Turn it on for the rule as the original gist words it.
+   */
+  queenLooks: boolean;
   /** "Matt's pairs": a matching pair in a hand counts 0 (red kings excepted). Default OFF. */
   mattsPairs: boolean;
   /** Allow counter-KABOO after a call. Default ON. */
@@ -279,6 +314,10 @@ export interface GameState {
   roundResult: RoundResult | null;
   gameResult: GameResult | null;
   log: LogEntry[];
+  /** Recent looks, newest last; see `Look`. Optional: a state stored before this existed lacks it. */
+  looks?: Look[];
+  /** The `seq` of the newest look. Monotonic across rounds. */
+  lookSeq?: number;
   startedAt: number;
   lastActivityAt: number;
 }

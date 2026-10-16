@@ -1,4 +1,5 @@
-import { DECK_SIZE, RANKS, SUITS, card } from '../src/engine/cards';
+import { RANKS, SUITS, card } from '../src/engine/cards';
+import { deckIds } from './invariants';
 import { DEFAULT_RULES } from '../src/engine/rules';
 import { applyAction, tick } from '../src/engine/reduce';
 import type { ApplyResult } from '../src/engine/reduce';
@@ -144,11 +145,14 @@ export interface ArrangeSpec {
  */
 export function arrange(table: Table, spec: ArrangeSpec): void {
   const state = table.state;
-  const total = state.rules.jokers ? DECK_SIZE + 2 : DECK_SIZE;
+  // A SET of ids, never a range: a jokerless two-deck game deals {0…51, 54…105},
+  // so 52, 53, 106 and 107 are not cards in this game at all (see `deckIds`).
+  const universe = deckIds(state.rules);
+  const inPlay = new Set(universe);
 
   const placed = new Map<number, string>();
   const place = (id: number, where: string): void => {
-    if (id < 0 || id >= total) throw new Error(`arrange: card ${id} is not in play (${where})`);
+    if (!inPlay.has(id)) throw new Error(`arrange: card ${id} is not in play (${where})`);
     const prev = placed.get(id);
     if (prev !== undefined) throw new Error(`arrange: card ${id} placed twice (${prev} and ${where})`);
     placed.set(id, where);
@@ -174,8 +178,8 @@ export function arrange(table: Table, spec: ArrangeSpec): void {
   if (spec.setAside === undefined) keep(state.setAside);
 
   const leftover: number[] = [];
-  for (let id = 0; id < total; id++) if (!placed.has(id) && !kept.has(id)) leftover.push(id);
-  if (placed.size + kept.size + leftover.length !== total) {
+  for (const id of universe) if (!placed.has(id) && !kept.has(id)) leftover.push(id);
+  if (placed.size + kept.size + leftover.length !== universe.length) {
     throw new Error('arrange: card accounting is wrong');
   }
 
@@ -217,7 +221,7 @@ export function arrangeShortDeck(
   table: Table,
   spec: { hands: Record<PlayerId, (number | null)[]>; deck: number[]; discardTop?: number[] },
 ): void {
-  const total = table.state.rules.jokers ? DECK_SIZE + 2 : DECK_SIZE;
+  const universe = deckIds(table.state.rules);
   for (const p of table.state.players) {
     if (!(p.id in spec.hands)) {
       throw new Error(`arrangeShortDeck: hands must include every player (missing ${p.id})`);
@@ -230,7 +234,7 @@ export function arrangeShortDeck(
   for (const id of spec.discardTop ?? []) used.add(id);
 
   const overflow: number[] = [];
-  for (let id = 0; id < total; id++) if (!used.has(id)) overflow.push(id);
+  for (const id of universe) if (!used.has(id)) overflow.push(id);
 
   arrange(table, {
     hands: spec.hands,

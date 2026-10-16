@@ -7,6 +7,13 @@ import type { Card, CardId, PublicCard, Rank, RuleConfig, Suit } from './types';
  *   26–38  diamonds A…K   (red)
  *   39–51  clubs    A…K
  *   52–53  jokers         (only dealt when `rules.jokers` is on)
+ *   54–107  a SECOND deck, the same 54 cards again with every id shifted by 54
+ *           (only dealt when `rules.decks` is 2)
+ *
+ * `CARDS` is the first set and what most callers want; `card(id)` also knows the
+ * second. Ids stay contiguous inside a set and unique across both, because the
+ * accounting everywhere ("every id is in exactly one zone") needs a physical card
+ * to have one name even when its twin has the same face.
  *
  * The table is a module constant rather than part of `GameState`: it never
  * changes, so storing it per-room would only bloat Redis.
@@ -18,6 +25,9 @@ export const RANKS: readonly Rank[] = [
 
 export const DECK_SIZE = 52;
 export const JOKER_IDS: readonly CardId[] = [52, 53];
+/** Ids per physical set: 52 standard cards plus 2 jokers. A second deck starts here. */
+export const SET_SIZE = DECK_SIZE + JOKER_IDS.length;
+export const MAX_DECKS = 2;
 
 const RED_SUITS: ReadonlySet<Suit> = new Set<Suit>(['H', 'D']);
 
@@ -59,12 +69,31 @@ export const CARDS: readonly Card[] = buildTable();
 
 export const MAX_CARD_ID = CARDS.length - 1;
 
+/** Every card of every deck, indexed by id: the first set, then its copy shifted by `SET_SIZE`. */
+const ALL_CARDS: readonly Card[] = (() => {
+  const out: Card[] = [];
+  for (let d = 0; d < MAX_DECKS; d++) {
+    for (const c of CARDS) out.push(d === 0 ? c : { ...c, id: c.id + d * SET_SIZE });
+  }
+  return out;
+})();
+
+/**
+ * Which of a set's 54 cards this is, ignoring which deck it came from.
+ *
+ * The artwork has one picture per card, so a second deck's seven of hearts is
+ * drawn exactly like the first's. This is the id the art is looked up by.
+ */
+export function setIndexOf(id: CardId): number {
+  return id % SET_SIZE;
+}
+
 /**
  * Look up a card. Throws on an unknown id — that is an engine bug, never a user
  * error, so it must not be swallowed into an `EngineError`.
  */
 export function card(id: CardId): Card {
-  const c = CARDS[id];
+  const c = ALL_CARDS[id];
   if (!c) throw new Error(`kaboo: unknown card id ${id}`);
   return c;
 }
@@ -78,10 +107,16 @@ export function publicCard(id: CardId): PublicCard {
 }
 
 /** The unshuffled deck for the given rules, top-of-pile first. */
-export function makeDeck(rules: Pick<RuleConfig, 'jokers'>): CardId[] {
+export function makeDeck(rules: Pick<RuleConfig, 'jokers'> & Partial<Pick<RuleConfig, 'decks'>>): CardId[] {
   const ids: CardId[] = [];
-  for (let id = 0; id < DECK_SIZE; id++) ids.push(id);
-  if (rules.jokers) ids.push(...JOKER_IDS);
+  // Anything but an explicit 2 is one deck, so a state stored before `decks`
+  // existed (or a malformed value) still deals a normal game.
+  const decks = rules.decks === 2 ? 2 : 1;
+  for (let d = 0; d < decks; d++) {
+    const base = d * SET_SIZE;
+    for (let id = 0; id < DECK_SIZE; id++) ids.push(base + id);
+    if (rules.jokers) for (const joker of JOKER_IDS) ids.push(base + joker);
+  }
   return ids;
 }
 

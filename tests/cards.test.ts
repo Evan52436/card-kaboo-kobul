@@ -3,11 +3,14 @@ import {
   CARDS,
   DECK_SIZE,
   JOKER_IDS,
+  SET_SIZE,
+  card,
   handTotal,
   isRedKingValue,
   makeDeck,
   matchesForTap,
   rankValue,
+  setIndexOf,
   shuffle,
 } from '../src/engine/cards';
 import { cid, seededRng } from './helpers';
@@ -43,6 +46,63 @@ describe('card values', () => {
     expect(makeDeck({ jokers: false }).some((id) => JOKER_IDS.includes(id))).toBe(false);
     expect(makeDeck({ jokers: true })).toHaveLength(54);
     expect(makeDeck({ jokers: true })).toContain(52);
+  });
+});
+
+describe('two decks', () => {
+  it('deals 104 cards for two decks, and every id is distinct', () => {
+    const one = makeDeck({ jokers: false, decks: 1 });
+    const two = makeDeck({ jokers: false, decks: 2 });
+    expect(one).toHaveLength(52);
+    expect(two).toHaveLength(104);
+    // Not two copies of the SAME ids: a physical card has one name even when its
+    // twin has the same face, or the "every id is in exactly one zone" accounting
+    // that the whole engine leans on would count one card twice.
+    expect(new Set(two).size).toBe(104);
+  });
+
+  it('carries the jokers into the second set too', () => {
+    const two = makeDeck({ jokers: true, decks: 2 });
+    expect(two).toHaveLength(108);
+    expect(new Set(two).size).toBe(108);
+    // Both joker ids from set one, and both from set two.
+    for (const id of JOKER_IDS) {
+      expect(two).toContain(id);
+      expect(two).toContain(id + SET_SIZE);
+    }
+  });
+
+  it('treats anything that is not an explicit 2 as ONE deck', () => {
+    // A state stored before `decks` existed, or a malformed value from a request
+    // body, must still deal a normal game rather than an empty or doubled one.
+    expect(makeDeck({ jokers: false })).toHaveLength(52);
+    expect(makeDeck({ jokers: false, decks: undefined })).toHaveLength(52);
+  });
+
+  it('gives both copies of a card the SAME face and artwork', () => {
+    // The art has one picture per card, so `setIndexOf` is the id the image is
+    // looked up by. If it were wrong, the second deck's seven of hearts would
+    // render as a different card — or as nothing.
+    const first = card(cid('7', 'H'));
+    const second = card(cid('7', 'H') + SET_SIZE);
+    expect(setIndexOf(second.id)).toBe(setIndexOf(first.id));
+    expect(second.rank).toBe(first.rank);
+    expect(second.suit).toBe(first.suit);
+    expect(second.red).toBe(first.red);
+    expect(second.value).toBe(first.value);
+    // ...but they are still two different physical cards.
+    expect(second.id).not.toBe(first.id);
+  });
+
+  it('lets a tap match the other deck’s copy of the same rank', () => {
+    const rules = { redKingsMatchRank: true };
+    const top = card(cid('9', 'H'));
+    const twin = card(cid('9', 'H') + SET_SIZE);
+    // Two decks means every rank exists twice, so this is the common case, not a
+    // curiosity: matching is by rank, so either copy answers the pile.
+    expect(matchesForTap(twin, top, rules)).toBe(true);
+    expect(matchesForTap(card(cid('9', 'S')), top, rules)).toBe(true);
+    expect(matchesForTap(card(cid('8', 'H')), top, rules)).toBe(false);
   });
 });
 

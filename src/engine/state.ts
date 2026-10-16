@@ -8,6 +8,7 @@ import type {
   GameConfig,
   GameState,
   LogEntry,
+  Look,
   PlayerId,
   PlayerState,
   RuleConfig,
@@ -165,6 +166,25 @@ export function addLog(state: GameState, entry: LogEntry): void {
   if (state.log.length > 200) state.log.splice(0, state.log.length - 200);
 }
 
+/**
+ * How many looks to keep. Enough that a client which polls slowly still gets every
+ * one it missed in a single read; nothing needs them once they have been shown.
+ */
+const LOOKS_KEPT = 12;
+
+/**
+ * Record that `by` looked at `playerId`'s `slot`, so the table can show it.
+ *
+ * Never a face: see `Look`. `lookSeq` is kept across rounds on purpose, so a
+ * client's "last look I showed" cursor stays meaningful when the next deal clears
+ * the list.
+ */
+export function addLook(state: GameState, look: Omit<Look, 'seq'>): void {
+  const seq = (state.lookSeq ?? 0) + 1;
+  state.lookSeq = seq;
+  state.looks = [...(state.looks ?? []), { seq, ...look }].slice(-LOOKS_KEPT);
+}
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
@@ -183,6 +203,7 @@ function freshRoundFields(state: GameState): void {
   state.finalSwapDeadline = 0;
   state.turnDeadline = 0;
   state.roundResult = null;
+  state.looks = [];
   state.turnCount = 0;
 }
 
@@ -266,6 +287,8 @@ export function createGame(config: GameConfig, ctx: Ctx): GameState {
     roundResult: null,
     gameResult: null,
     log: [],
+    looks: [],
+    lookSeq: 0,
     startedAt: ctx.now,
     lastActivityAt: ctx.now,
   };

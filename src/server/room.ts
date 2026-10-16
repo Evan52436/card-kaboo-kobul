@@ -1,7 +1,7 @@
 import { applyAction, startGame, tick } from '@/engine/reduce';
 import { project } from '@/engine/project';
 import { MAX_PLAYERS, MIN_PLAYERS } from '@/engine/state';
-import type { Action, EngineError, EngineEvent, PlayerId } from '@/engine/types';
+import type { Action, EngineError, EngineEvent, PlayerId, RuleConfig } from '@/engine/types';
 import { makeRoomCode } from '@/lib/random';
 import { PENDING_LIMIT, type RoomRecord, type StateStore } from '@/store';
 import type { Realtime } from '@/realtime';
@@ -72,6 +72,18 @@ function cleanName(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim().slice(0, NAME_MAX);
   return trimmed.length > 0 ? trimmed : null;
+}
+
+/**
+ * The rules a host may choose at the deal, and only those.
+ *
+ * Everything else about the rules is the engine's default: a request body does not
+ * get to set a deadline or a penalty. Anything unrecognised is ignored rather than
+ * refused, so an older client that sends nothing still deals a normal game.
+ */
+export function dealRules(raw: unknown): Partial<RuleConfig> {
+  const body = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  return body.decks === 2 ? { decks: 2 } : {};
 }
 
 export function createRooms(deps: RoomDeps) {
@@ -248,8 +260,16 @@ export function createRooms(deps: RoomDeps) {
       };
     },
 
-    /** Host only. This is the moment the roster freezes and the engine takes over. */
-    async startRoom(code: string, token: string | null): Promise<SyncResponse | RoomError> {
+    /**
+     * Host only. This is the moment the roster freezes and the engine takes over.
+     *
+     * `options` is the host's choice of deck count and nothing else (`dealRules`).
+     */
+    async startRoom(
+      code: string,
+      token: string | null,
+      options?: unknown,
+    ): Promise<SyncResponse | RoomError> {
       const session = authenticate(code, token);
       if (isRoomError(session)) return session;
 
@@ -263,6 +283,7 @@ export function createRooms(deps: RoomDeps) {
           code,
           record.roster.map((r) => ({ id: r.id, name: r.name })),
           ctx(),
+          dealRules(options),
         );
         const next: RoomRecord = {
           ...record,

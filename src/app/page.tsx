@@ -96,6 +96,9 @@ function Room({
  * actual question at this point in a game.
  */
 function Lobby({ game, onLeave }: { game: Game; onLeave: () => void }) {
+  // Only the host sees or uses this. Kept above the early return below, because a
+  // hook after a conditional return is a different hook on different renders.
+  const [decks, setDecks] = useState<1 | 2>(1);
   const view = game.room.status === 'lobby' ? game.room : null;
   if (!view) return null;
 
@@ -135,11 +138,38 @@ function Lobby({ game, onLeave }: { game: Game; onLeave: () => void }) {
         </p>
       </section>
 
+      {view.host && (
+        <fieldset className="kb-choice" disabled={game.busy}>
+          <legend className="kb-label">Cards</legend>
+          <div className="kb-choice__row">
+            <button
+              type="button"
+              className="kb-btn kb-btn--toggle"
+              aria-pressed={decks === 1}
+              onClick={() => setDecks(1)}
+            >
+              1 deck
+            </button>
+            <button
+              type="button"
+              className="kb-btn kb-btn--toggle"
+              aria-pressed={decks === 2}
+              onClick={() => setDecks(2)}
+            >
+              2 decks
+            </button>
+          </div>
+          <p className="kb-panel__note">
+            {decks === 1 ? '52 cards. Every card once.' : '104 cards. Every card twice, so a longer game.'}
+          </p>
+        </fieldset>
+      )}
+
       {view.host ? (
         <button
           type="button"
           className="kb-btn kb-btn--primary"
-          onClick={game.deal}
+          onClick={() => game.deal({ decks })}
           disabled={needed > 0 || game.busy}
         >
           {needed > 0 ? `Need ${needed} more` : 'Deal the cards'}

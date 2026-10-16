@@ -34,11 +34,12 @@
 | **M4** | Vercel deploy, polish, mobile QA | 🔴 **blocked on the owner** — needs Upstash + Ably accounts and `vercel login` (§10) |
 | **M5** | Up to 8 players: the 3–8 seat layout around the table | ⚪ **not started** — the engine and transport support 8 today |
 
-`bun run verify` is green: **243 tests across 15 files**, typecheck and lint clean, `bun run build`
+`bun run verify` is green: **249 tests across 15 files**, typecheck and lint clean, `bun run build`
 green, and `scripts/smoke.mjs` passes over real HTTP against a running server.
 
-**The table is a real deck.** Faces are PNGs from a public-domain vector deck under
-`public/cards/` (§7, §8); the back is CSS. Every control lives in one action dock pinned to the
+**The table is a real deck.** Faces are public-domain artwork under `public/cards/`, served as
+**lossless WebP** with the PNG kept beside it as an `onError` fallback (§7, §8); the back is CSS.
+The host chooses **one deck or two** when they deal (§5). Every control lives in one action dock pinned to the
 bottom centre, and the table is built to fit one phone screen without scrolling the page — the board
 is the only thing that ever scrolls, and only when it has to.
 
@@ -50,7 +51,11 @@ transmitted. Actions POST, state lives behind `StateStore`, each player holds a 
 `tests/store-env.test.ts`, `tests/session-key.test.ts`) — written against the documented APIs, but no
 request has crossed a network. The peek and tap sub-flows, the opening-peek Ready gate, the
 hover/press/live card states and the hand-row layout have all been driven through a real browser
-(2026-10-15, Chromium via Playwright; numbers in §9). **The effect sub-flows (7/8/9/10/J/Q/K
+(2026-10-15, Chromium via Playwright; numbers in §9). **On 2026-10-16 the WebP path and the
+peek-watch marks were driven the same way, against a production build** (`next build && next start`):
+a real table requested **only** `/cards/*.webp` (no `.png` fallback fired), the browser decoded it at
+264×384, an opponent's peek put a yellow eye-ring on their card with the line "Ana is looking at their
+own card 3", and the mark cleared itself afterwards. **The effect sub-flows (7/8/9/10/J/Q/K
 targeting) still have had no finger on them** — and that gap is exactly where the tap bug below was
 hiding. The card-flight planner has unit tests and runs on the pages that were driven, but no flight
 has been *watched* land.
@@ -67,7 +72,8 @@ bun run test       # Vitest: engine + room + transport (fast, no network)
 bun run typecheck  # tsc --noEmit
 bun run lint       # ESLint (flat config)
 bun run build      # production build (must stay green: M4 deploys this)
-bun run cards      # re-render public/cards/ from the pinned upstream deck (§7)
+bun run cards      # re-render public/cards/*.png from the pinned upstream deck (§7)
+bun run cards:webp # re-encode those PNGs to lossless .webp (§7) — needs `bun run cards` first
 bun run verify     # typecheck && lint && test  ← run before every commit
 ```
 
@@ -83,7 +89,10 @@ bun run verify     # typecheck && lint && test  ← run before every commit
   it never exercises Next's routing or JSON serialisation. It caught three wrong assumptions about
   the wire on first run. Point it elsewhere with `KABOO_BASE` (e.g. at a dev server on another port).
 - **`bun run cards`** is a build-time script, not part of `verify`: it fetches the upstream SVGs and
-  rasterises them. Its output is committed, so a normal build needs no network.
+  rasterises them. **`bun run cards:webp`** re-encodes its output, and is a separate step on purpose —
+  the PNG is the source of truth, and `Card.tsx` falls back to it. Its output is committed, so a
+  normal build needs no network. Both take optional card names (`bun run cards:webp 7H AS`) to redo
+  one card at a time.
 
 **Environment (M4).** Names only, never values: `UPSTASH_REDIS_REST_URL`,
 `UPSTASH_REDIS_REST_TOKEN`, `ABLY_API_KEY`, `ROOM_SECRET`. `.env.example` lists them; `.env*` is
@@ -136,8 +145,10 @@ src/
   lib/          api.ts (the only `fetch`) · session.ts (the seat + its React store) · stream.ts
                 (push when available, polling always) · useGame.ts (the hook) · flights.ts (pure: which cards moved between two snapshots) · random.ts
   styles/       tokens.css ← the ONLY place raw values are defined. game.css is layout only.
-public/cards/   54 PNGs (52 + 2 jokers) at 264×384, ~668 KB total, plus a README with the licence
-scripts/cards.mjs   re-renders public/cards/ from the pinned upstream commit (`bun run cards`)
+public/cards/   54 cards at 264×384 as PNG (548 KB) AND lossless WebP (452 KB), plus a README with the licence
+scripts/cards.mjs   re-renders public/cards/*.png from the pinned upstream commit (`bun run cards`)
+scripts/cards-webp.mjs  re-encodes every PNG to .webp and FAILS if any card got bigger (`bun run cards:webp`)
+scripts/lib-webp.mjs    the one encoder (`magick`, falling back to `cwebp`) + `pathOf`/`sizeOf`
 scripts/smoke.mjs   the wire contract over real HTTP against a live server
 tests/        210 tests. Shared: helpers.ts (harness, seededRng) · invariants.ts (accounting,
               leakage, zones) · fuzz.ts (seeded random actions) · decide.ts (what a client would do
@@ -178,7 +189,10 @@ event queue being drained.
 
 ## 5. Game rules (source of truth)
 
-**Deck.** 52 cards. Optional Jokers (value 0) behind `rules.jokers`, **default off**.
+**Deck.** 52 cards, or **two decks of 52 behind `rules.decks: 2`** (the host picks when dealing) —
+the second deck is a second *set* of physical cards sharing the same faces, so every rank exists
+twice and a tap has twice as many legal answers. Optional Jokers (value 0) behind `rules.jokers`,
+**default off**; each set carries its own two.
 Values: Ace=1, 2–10 face value, J/Q/K=10, **RED kings = −1** (both red kings).
 
 **Deal & peek.** 4 face-down cards per player in a 2×2 square. Slots are fixed and **never
@@ -199,7 +213,7 @@ compacted** — players remember positions. Slots `0,1` = far row, `2,3` = **nea
 | 7 / 8 | Look at one of **your own** cards |
 | 9 / 10 | Look at one **opponent's** card |
 | J | **Blind-swap** any two cards on the table |
-| Q | Swap one of your cards with any other; you **may look at the card you receive** |
+| Q | Swap one of your cards with any other. **Neither player sees what moved** — the default is blind for both (`rules.queenLooks: false`); the original house rule where the swapper looks is behind the flag |
 | K | Look at any two cards, then **decide whether to swap them**, and announce the decision |
 
 **Tapping (out-of-turn race).** Whenever a table card matches the top discard, **any** player may
@@ -245,7 +259,9 @@ Each has a **flag** and a **default currently implemented**. Every flag here exi
 | 9 | How much of a failed call is the penalty? | `rules.kabooPenaltyMode` / `kabooPenaltyPoints` | `'added'` + `20` — the caller keeps their hand score and adds 20 | Alternative implemented: a flat-penalty mode |
 | 10 | Hand size | `rules.handSize` | `4` | Fixed by the brief; a flag so tests can vary it |
 
-Also implemented, **defaulted off**: `rules.jokers`, `rules.mattsPairs`.
+Also implemented, **defaulted off**: `rules.jokers`, `rules.mattsPairs`. And two flags that are settled
+host choices rather than open questions: **`rules.decks`** (`1`, or `2` from the deal toggle — §5) and
+**`rules.queenLooks`** (**default `false`**: a Queen swap is blind for both players — §7).
 
 **Need the user's answer** (a default is implemented, so nothing is blocked): #2 and #5.
 
@@ -279,7 +295,10 @@ after ~12h of no writes** (Redis `EXPIRE`, refreshed on every write).
 | 2026-10-15 | One **private channel per player** (`kaboo:room:{CODE}:p:{playerId}`) with a subscribe-only scoped capability, and `leave` as a **seventh** route | A shared table channel cannot carry a private peek. `tokenFor` mints `capability: { [thatOneChannel]: ['subscribe'] }`, so a player cannot listen to another seat even knowing its name. `leave` was added because `room.ts` already implemented and tested `leaveRoom` and the UI needs it — a route the plan had missed | One room-wide channel (cannot deliver a peek privately); filtering a shared channel client-side (the card would already be on the wire) |
 | 2026-10-15 | The **seat is read with `useSyncExternalStore`**, with `getServerSnapshot` returning `null` and a second constant-snapshot store for "has the browser taken over yet" | `localStorage` is external state: copying it into `useState` via an effect is a second source of truth and renders once with the wrong answer — a seated player would see the join form and then be yanked off it. The server cannot read `localStorage`, so it renders the neutral gate and the client takes over. Also the only shape React 19's `set-state-in-effect` and `refs` lint rules accept | `useState(() => loadSession())` (hydration mismatch); `useEffect(() => setSession(…))` (lint error, cascading render); a `/api/me` round trip (a network hop to answer a question the device can answer) |
 | 2026-10-15 | `useGame` takes a **non-null** session and is mounted once, in `page.tsx`, above both the lobby and the table; the ref holding `onLost` is written **in an effect**, not during render | The lobby and the table are two views of one live connection, so dealing must not tear down the stream and rebuild the Ably connection — and the peek cursor must survive it. A null branch would have needed `setState` inside an effect to reset state, which is both a lint error and a cascading render | One `useGame` per screen (reconnect on deal, cursor reset); resetting state in an effect (lint, extra render); `useEffectEvent` (not stable in this Next version) |
-| 2026-10-15 | **The deck is real artwork, vendored as PNG — a deliberate, measured deviation from the brief's "render cards as SVG or CSS"** | The brief's rule exists to avoid copyrighted art, so the fix was a licence, not a drawing: Byron Knoll's vector deck, released into the **public domain** (readme read before anything was vendored), via `notpeter/Vector-Playing-Cards` at a pinned commit. Rasterised at 264px wide — 3× the largest a card is ever drawn — and quantised to 128 colours: **668 KB for all 54**, at **exactly the size they are displayed**, so there is no scaling work for the browser to do. Hand-drawn CSS pips would have been a worse game to play *and* a new source of contrast bugs | Shipping the SVGs (8 MB raw, ~3 MB after SVGO for the 12 court cards alone — and `floatPrecision: 0`, the setting that would have made them small, collapsed a queen into stray diagonals, verified by rendering both and looking); WebP (no gain on flat art this size, and one more thing to get wrong); `next/image` (the files are already pre-sized, so the optimiser buys a round trip and nothing else) |
+| 2026-10-15 | **The deck is real artwork, vendored as PNG — a deliberate, measured deviation from the brief's "render cards as SVG or CSS"** | The brief's rule exists to avoid copyrighted art, so the fix was a licence, not a drawing: Byron Knoll's vector deck, released into the **public domain** (readme read before anything was vendored), via `notpeter/Vector-Playing-Cards` at a pinned commit. Rasterised at 264px wide — 3× the largest a card is ever drawn — and quantised to 128 colours: **548 KB for all 54** (byte totals; `du` reports ~668 KB of allocated blocks), at **exactly the size they are displayed**, so there is no scaling work for the browser to do. Hand-drawn CSS pips would have been a worse game to play *and* a new source of contrast bugs | Shipping the SVGs (8 MB raw, ~3 MB after SVGO for the 12 court cards alone — and `floatPrecision: 0`, the setting that would have made them small, collapsed a queen into stray diagonals, verified by rendering both and looking); WebP as first measured — the default **lossy** encoder came out *bigger* than these PNGs, and the row below records the reversal; `next/image` (the files are already pre-sized, so the optimiser buys a round trip and nothing else) |
+| 2026-10-16 | **The cards ship as LOSSLESS WebP, with the PNG kept beside them as the fallback** | Owner's ask ("convert all the image to compressed WEBP so it loads fast"). The first measurement had used the default *lossy* encoder and rejected WebP on it — **that was measuring the wrong thing**: lossy has to spend bits on the ringing it introduces, and PNG8's 128-colour palette is already near-optimal for flat art, so the simple cards came out **larger** (7H: 5,772 B → 6,390 B at q75, 7,748 B at q82). Lossless wins on **all 54**: 548 KB → **452 KB (18% smaller)**, and it is **bit-exact** — `magick compare -metric AE` reports **0 differing pixels on every card**, dimensions preserved, so "did the conversion work" is a test rather than an opinion. The PNG stays because `Card.tsx`'s `fallToPng` needs it: a browser without WebP gets the PNG rather than nothing | Lossy WebP (measurably bigger here — see the numbers); dropping the PNGs (removes the `onError` fallback and the encoder's own source of truth); `next/image` (still a round trip for a file that is already the size it is drawn) |
+| 2026-10-16 | **`decks: 1 \| 2` is a host choice at deal time, and the second deck is a second *set* of card IDs, not a re-deal of the first** | Owner's ask ("play with just one deck of card or two deck / sets / box of card"). The id table is fixed — 0–51 set one, 52–53 its jokers, 54–107 set two — so `setIndexOf(id) = id % SET_SIZE` maps either copy of a card to **one** picture: both sevens of hearts look identical because they *are* the same card, physically distinguishable only by id. This is what makes the accounting invariant survive a 104-card game, and it is the source of the ids-are-a-set trap in §9 | Reusing the same 52 ids twice (the whole "every card is in exactly one zone" invariant counts one card twice); a contiguous 0…103 id space (would shift what every id draws whenever `jokers` flips) |
+| 2026-10-16 | **The Queen's swap is blind for BOTH players by default** (`rules.queenLooks: false`) | Owner's ask: "when swapping card with other person, both the person shouldn't be able to see the card they swap with." The original gist lets the swapper look at what they receive, but that makes the Queen a free look plus a swap — and the recipient is left knowing **that** their card changed without knowing what it was, which is the worst of the three positions. Now the engine emits no `revealed` event at all for a Queen swap (guarded by the flag), so neither projection can carry one: proved by a test asserting **no event in the whole result has a `card` field**. The public `effectUsed` names the two slots — both owners learn *that* they changed, never *what* they became | Keeping the old default (asymmetric information, and the swapper gets a look the rules never charged for); hiding even the fact of the swap (the slots visibly change, so the engine would be lying) |
 | 2026-10-15 | **Every action lives in one `.kb-dock` pinned to the bottom centre**, full-bleed, `max-width: 48rem` inside | The owner's report: "the buttons are hard to see and reach". As a bar hanging off the bottom of the left-hand desktop column, the shortest mouse travel to *Swap* ran diagonally across the whole table; on a phone the bottom is where the thumb already is. The peek tray and the refusal message moved in with it, so nothing floats over the pile the next player is about to tap. Disabled buttons stopped being `opacity: 0.45` (≈2:1 — a button you cannot read is not a button) and became flat, muted and legible at 6.5:1 | A floating action button (hides the one control that matters); a top bar (furthest point from a thumb); keeping the bar in the column and only making it bigger |
 | 2026-10-15 | **The table is exactly `100dvh` and does not scroll; the board between the fixed rows is the only scroller.** The dock owns the height with `flex: 0 0 auto` instead of `position: sticky` | Sticky only ever pins a bar that is *already* at the bottom of its scroll: at the top of a too-tall page the bar sits mid-document and the last row of the player's hand hides behind it — the buttons were reachable and the cards they act on were not. Below the desktop breakpoint each column of the board scrolls on its own, because scrolling the board as a whole dragged the scoreboard's heading off the top of the screen the moment a hand needed to come into view | Trimming the layout until the worst case fits (shrinking the cards every player looks at all game to serve a hand that took a penalty card); `position: fixed` (content passes underneath); letting the page scroll (a dock that scrolls away is not a dock) |
 | 2026-10-15 | When it becomes your move, the board scrolls your own cards into view — `scrollIntoView({ block: 'nearest' })`, instantly | `'nearest'` scrolls only when the element is not already fully visible, so it is a **no-op on every screen that already fits** — which is most of them. Instant rather than smooth because a control you cannot see is worse than a jump you did not ask for, and `prefers-reduced-motion` is not a question worth asking when the alternative is an invisible card | Shrinking cards to fit the worst case; a manual "scroll down" affordance (the player does not yet know there is anything to scroll to); smooth scrolling (a 40px correction does not want 300ms of animation) |
@@ -293,6 +312,9 @@ after ~12h of no writes** (Redis `EXPIRE`, refreshed on every write).
 | 2026-10-15 | **No turn action until the card preview is closed** (`blocked` in `GameScreen`, `closeFirst` in `ActionBar`) | Owner's request. "Remember it" is the only record of what a player saw, so moving on before closing it is moving on before the card was taken in. While a notice is open the turn buttons are disabled with a stated reason and no table card is pickable. **Exempt:** the opening peek (notices pile up by design, and Ready has its own gate), taps (a race against a deadline), and a King's swap decision (closing the notice would remove the two cards the decision is about). The turn deadline still runs, so an unclosed notice cannot strand a table | Gating the tap (loses the race to a dialog); gating the King decision (decide blind); hiding the buttons instead of disabling them (no reason shown) |
 | 2026-10-15 | **Ready is disabled, with the reason printed, while a peek notice for the opening pair is still open** — a *client-side* gate, deliberately, and separate from `blocked` above (which exempts the peek) | Owner's request: "make sure people can't click ready before they close the 2 cards they're seeing at the start." Looking at your own two cards *is* the peek phase, so Ready is the step that throws the look away. A client-side gate is the only honest one available: notices are transient reveals the server keeps no record of (§9.2), so there is no dismissal for the server to enforce; and the 45s peek deadline still readies everyone, so it cannot strand a table. **Still open:** a player who never peeks at all is ungated — closing the notices presupposes there are some. Forcing the peek would make it mandatory, which is a rule change and is raised in §6, not made here | Server-side enforcement (needs stored dismissal state, which §9.2 forbids); a toast that only warns (the owner asked for "can't", not "is discouraged"); hiding the button (a disabled control that says why beats a missing one) |
 | 2026-10-15 | **The live-card cue is a ring, not a lift or a pulse of the whole card** (`.kb-card--live`, a 3px→7px `--c-highlight` ring) | The cue means "this is what the current decision is about", and it has to survive being one of four cards the player is memorising. A lift would break the row's baseline and make the hand look ragged for as long as the decision lasts; a scale would change the card's size, which is the one thing that carries position; only a ring leaves the frame exactly where it was. `--c-highlight` because KABOO already owns that colour as "the loudest thing on screen". Set on `Card` only, and chosen in `GameScreen` — see the two traps in §9 | An outline (`outline` is the focus ring's job — two rings on a focused card, and the focus one must win); a border (changes the layout box); a fully lit background (reads as face-up) |
+| 2026-10-15 | **You can SEE that an opponent is looking at your card** (`PeekWatch.tsx`: the card lifts and tilts, a ring goes round it, an eye sits on it, and a line of words names who and which slot) — driven by the `looks` list on the projection, and **red when the card is yours, yellow when it is anyone else's** | At a real table you watch an opponent lift your card, even though you can never see its face — so this is information the player legitimately has and the UI was simply not showing. It leaks nothing: a `Look` names a **slot and a reason** (`peek`/`own`/`other`/`king`) and never a face, which is why the whole feature can live in the projection. Red-vs-yellow is the load-bearing part: "someone is looking at MY card" is the one the owner has to notice, and it must not read like a bystander's card being lifted | Revealing what was looked at (that is the whole hidden-information boundary); showing your *own* looks (you already have the "you saw" notice — a ring round the card you just chose says nothing you did not know, so they are filtered out); a per-look toast (a King looks at two and a poll gap can deliver a burst, so the marks are capped at `MAX_AT_ONCE` and the words collapse to one line about the newest) |
+| 2026-10-15 | **A new look is found by a monotonic `seq`, and the first view this mounts with is thrown away as a baseline** | Position in a list is not "new": a player who joins late or reloads receives the whole round's `looks` at once, and replaying that history would ring every card on the table for no reason. `PeekWatch` records the highest `seq` it has seen and only acts on `seq > baseline`, so a remount is silent and a genuinely new look is not | Diffing the array (a re-order or a truncated list looks like a new event); a timestamp (the brief forbids trusting client clocks, and these arrive from the server anyway); replaying history (a reload becomes a fireworks display) |
+| 2026-10-15 | **The marks are put on the DOM and taken off again, like `CardFlights` — never held as React state** | A re-render must not cancel a mark halfway, and a mark must not survive a card that has moved. Writing the class onto the live element and removing it on a timer means the animation is immune to the poll cadence, and the `data-flight` anchor `Hand` already sets is the address to find the card by. The one exception is a pending King decision, whose two cards stay marked **for as long as the table waits on them**: that is a state, so it is derived from `view.effect.awaitingKingDecision` in an effect keyed on the two refs | A React class toggle (a mid-animation re-render clears it); a CSS animation on a key (restarts when the element re-mounts on `gen` change); marking by card id (a face-down card has no id in the projection) |
 | 2026-10-15 | **`.kb-card--selected` lifts with `translate`, and hover/press add to it with `translate` too — never `transform`** | `translate` and `transform` are *separate properties that compose*, so `--selected`'s `translate: 0 -2px` and the hover rule's `translate: 0 -4px` (and `:active`'s `translate: 0 0`) resolve against each other in the ordinary cascade instead of one silently erasing the other. With a single `transform` the last rule to win would decide, and the press state would lose its selected lift. `transform` is left free for a future rotate/scale. Same reason the reduced-motion block resets `translate` **and** `transform` | One `transform` property (states overwrite rather than compose); `top`/`margin` (animates layout every frame) |
 | 2026-10-15 | **A claimed tap's intent is derived from `view.tap`, not from button state** — `GameScreen`'s `activeIntent` is `tapPlace`/`tapChoose` while `view.tap.playerId === youId`, and wins over the `none` a button would have set | **A real, pre-existing bug that made the tap unplayable.** A tap is the one decision a player does not start with a button: the claim puts them in it and `legalActions` then reads `TAP_CHOOSE`. Nothing anywhere set `intent` to `'tapChoose'`, so after claiming, every card on the table stayed inert while the bar said "pick the card that matches the top of the pile" — measured in the browser as `ownTappable: 0, allTappable: 0` against a server advertising `['TAP_CHOOSE']`. The tap could then only end on the 8s deadline, which counts as a *wrong tap*: a penalty card, for a button that could not work. After: `ownTappable: 4, allTappable: 8` | A `onIntent('tapChoose')` set in an effect when the tap arrives (an effect that exists only to mirror state the view already carries, and one render late); putting the tap's two steps in `ActionBar`'s `Intent` state (the tap can arrive from another player's claim on your behalf) |
 
@@ -332,7 +354,8 @@ the motion signature.
 **Component classes** (defined in `tokens.css`; components apply them, never raw values):
 `kb-surface`, `kb-header`, `kb-btn` (`--primary` / `--danger` / `--kaboo`), `kb-chip`
 (`--dark` / `--soft`), `kb-title`, `kb-label`, `kb-card` (`--down` / `--selected` / `--live` /
-`--landed` / `--dimmed` / `--empty`), `kb-table`. `game.css` is layout only and defines no raw values.
+`--landed` / `--dimmed` / `--empty` / `--watched` / `--spied`), `kb-eye` (`--yours`), `kb-look-note`,
+`kb-table`. `game.css` is layout only and defines no raw values.
 
 Three rules the class bodies encode, so read them there before overriding: **KABOO** is highlight
 yellow with black text and an `8px` shadow (never white on yellow — it is 1.3:1); contrast is
@@ -348,12 +371,18 @@ Under `prefers-reduced-motion` the **state survives and the movement goes**: `--
 hover lift and the press translation are set to `none`, and `--live` keeps its static `3px` ring with
 `animation: none` — a player who asked for no motion still has to be told which card is live.
 
-**Card art.** `public/cards/{rank}{suit}.png` (`AS`…`KD`, plus `Joker1`/`Joker2`), **public domain**
+**Card art.** `public/cards/{rank}{suit}` (`AS`…`KD`, plus `Joker1`/`Joker2`), **public domain**
 — Byron Knoll's vector deck, redistributed by `notpeter/Vector-Playing-Cards`; the render script
-pins the upstream commit. `public/cards/README.md` records this where the files are. `cardFile()`
-maps a `PublicCard` to its file, and the two jokers are told apart by **id** (52/53) because their
+pins the upstream commit. Each card exists as **`.webp` (what `Card.tsx` requests) and `.png` (the
+`onError` fallback)**, both committed; `public/cards/README.md` records the licence and both steps
+where the files are. `cardFile()` maps a `PublicCard` to its file, via `setIndexOf` so a second-deck
+copy draws the same picture, and the two jokers are told apart by **id** (52/53) because their
 `rank` and `suit` are identical. The **back is CSS**, not art: nothing to load for the ten of them on
-the table, and a shut card must not read as "a card" from across the table. The face image overshoots
+the table, and a shut card must not read as "a card" from across the table — the back is a diamond
+lattice: two crossed `repeating-linear-gradient`s at ±45° over the card field, a `--c-highlight`
+medallion rotated 45° on `::before`, and an inner rule on `::after`. Every dimension is a fraction of
+`--card-w` (the lattice pitch is `--card-w / 7`), so it holds at any card size rather than being art
+pinned to one. The face image overshoots
 its frame by 4% (`.kb-card__face { inset: -2% }`) so the deck's own rounded border falls outside the
 clip and a card ends up with exactly one edge — the `2px` rule on `.kb-card`. At `108%` the corner
 index clips; at `104%` it does not.
@@ -450,36 +479,73 @@ splits in two.
 - `:hover` is gated behind `@media (hover: hover) and (pointer: fine)`, and that is not optional. On a touch screen a `:hover` rule matches whatever was **tapped last**, so an ungated card hover leaves a card lit under nobody's finger — and it stays lit until another tap. Verified both ways in the browser: on a `hasTouch: true` context `matchMedia('(hover: hover)')` is `false` and hover does nothing.
 - **The peek tray's caption sets the tray's width, which sets the tray's height.** Each notice is a card with a caption under it, so a longer caption widens every item: the 13ch form of the own-card label (`your card · slot 3`) made a 94px item around a 40px card, which was 21px too wide for the heading and the cards to share one 360px row — the heading wrapped above them and the tray went **122px → 208px**, which cost the player the bottom row of the hand the phase is about. Shortening it to `slot 3` brought it to 102px. Measure the tray, not the card, when changing a notice label.
 - **The board shrinks when the peek tray opens, and the bottom row of the hand is the row the phase is about.** The "scroll your own cards into view" effect must depend on the tray being open as well as on whose turn it is — the tray opening changes no other dependency, so without it the board gets shorter and the row falls off the bottom silently. Measured against the **viewport**; measuring against the column box reports "0 clipped" while the cards are behind the dock.
+- **Card ids in play are a SET, not a range — a jokerless two-deck game deals `{0…51, 54…105}`.** The
+  id table is fixed (0–51 set one, 52–53 its jokers, 54–107 set two) because a card id has to mean the
+  same physical card in every game — `setIndexOf` maps it to artwork. So `for (let id = 0; id < total;
+  id++)` and `id >= total` are both wrong the moment `decks: 2` and `jokers: false` meet, and they fail
+  *loudly and wrongly*: adding `decks: 2` to the property fuzz reported four phantom failures —
+  "card 52 is in no zone", "card 104 is not in play" — on **every** card, which reads exactly like a
+  real card-conservation bug. Ask the engine what it deals (`makeDeck`, wrapped as `deckIds` in
+  `tests/invariants.ts`) rather than deriving it from a count. The engine was never at fault; only the
+  test's idea of the deck was.
+- **A `file:` URL's `pathname` is percent-ENCODED — hand a child process `fileURLToPath(url)`, never
+  `url.pathname`.** This checkout lives under `…/Proyek lokal/…`, so `pathname` gives ImageMagick the
+  literal string `Proyek%20lokal` and every conversion dies with `could not write …/Proyek%20lokal/…`.
+  The bug had been sitting latent in `scripts/cards.mjs` for as long as that script has existed; it
+  surfaced only when the new WebP script took the same path. Both now share `pathOf` from `lib-webp.mjs`.
+- **Verify a shell assertion before believing it.** `magick compare -metric AE` prints `0 (0)` to
+  **stderr**, so comparing its output to the string `"0"` reported all 54 cards as differing. Pipe
+  through `awk '{print $1}'` first. A check that fails on *everything* is a broken check, not a broken
+  subject — the same lesson as the ids-are-a-set trap above, which also produced a uniform, confident,
+  wrong verdict.
+- **Without Ably configured the client POLLS about every 2s, so a browser check that waits less than
+  that sees nothing and reads as a broken feature.** `PeekWatch` only fires on a *new* `look` arriving
+  in a projection, so a probe that peeked and then waited 1.2s found zero marks and looked like the
+  whole feature was dead — it was simply between polls. Wait past the interval (3s+) or poll until the
+  mark appears. The mark itself is short-lived by design (`WATCH_MS = 1800`, `NOTE_MS = 3200`), so a
+  probe must also measure it *while it is up*: sampled late, the same page reports a perfectly clean
+  card and the same false conclusion.
+- **A CSS transition means a computed style is a snapshot, not the final value.** The `--watched` ring
+  is `box-shadow: 0 0 0 3px var(--c-highlight)`, but reading it immediately after the class lands gives
+  an interpolated `0.15px 0.15px 0px 2.76px` — and reading it a frame earlier gives the *old* shadow
+  first in the list, which looks like the rule never applied. Read computed styles after the transition
+  settles, or assert on the class and the rule rather than a mid-flight number.
 ---
 
 ## 10. Next steps
 
-**Next steps** (rewritten 2026-10-15, after the peek-gate / card-state pass):
+**Next steps** (rewritten 2026-10-16, after the WebP / two-deck / Queen-privacy pass):
 1. **Drive the effect sub-flows (7/8/9/10/J/Q/K) in a browser.** These are the last interaction paths
    with no finger on them, and the tap bug (§7) was found the moment one was driven — the engine suite
    is green for all of them, which is exactly what made the tap bug invisible. Check: each button
    reaches its state, each pick lands on the card it named, and *Skip* is offered wherever the engine
-   accepts it.
-2. **M4 — deploy. Blocked on the owner, not on code.** A free Upstash database and an Ably app, plus
+   accepts it. **This pass widened the gap**: the Queen swap just changed behaviour and the two-deck
+   game doubles every choice, and neither has been played by hand.
+2. **The WebP is proven served and decoded** (2026-10-16, production build): only `.webp` was
+   requested on a real table, `Content-Type: image/webp`, 264×384, `fallToPng` never fired. What is
+   still unmeasured is the **payload saved on a cold cache** across a whole game, and how it behaves
+   on a browser without WebP support — the fallback is code-verified, not browser-verified.
+3. **M4 — deploy. Blocked on the owner, not on code.** A free Upstash database and an Ably app, plus
    `vercel login` run by the user (`! vercel login` in this session works). Then set the variables from
    `.env.example` in the Vercel dashboard and `vercel --prod`. **Then** prove the adapters (§3): Redis
    and Ably have never crossed a network. Until then treat §2's "M3 done" as provisional.
-3. **M4 — real hardware.** Only ever measured in headless Chromium. A real phone brings the home
+4. **M4 — real hardware.** Only ever measured in headless Chromium. A real phone brings the home
    indicator, the URL bar and `env(safe-area-inset-*)`, and a real finger is not a mouse. Check: the
    dock clears the home indicator, the hand row stays one row and scrolls sideways, the peek tray's
-   *Remember it* is reachable one-handed, and hover does nothing on touch (§9).
-4. **M5 — 3 to 8 seats.** Opponents currently render in a scrolling row. The brief wants 3–8 seated
+   *Remember it* is reachable one-handed, the peek-watch ring reads at arm's length, and hover does
+   nothing on touch (§9).
+5. **M5 — 3 to 8 seats.** Opponents currently render in a scrolling row. The brief wants 3–8 seated
    around the table on desktop while keeping the mobile column; the engine and transport already
    support 8. Budget note: the phone layout is full at three opponents, so a fourth needs the opponent
    row to scroll rather than to grow — and the desktop centre column already overflows at 3+.
-5. **A topbar that fits.** It wraps to two rows (82px vs 44px) below about 380px. It no longer clips
+6. **A topbar that fits.** It wraps to two rows (82px vs 44px) below about 380px. It no longer clips
    anything, but it costs 38px on exactly the screens that have none to spare.
 
 **Open questions for the user:** §6 #2 (how a multi-round game ends) and #5 (counter-KABOO); plus the
-one this pass raised, which is **not** an engine flag and so is not in §6 — **should the opening peek be
-mandatory?** Ready is currently gated on *closing* the two notices, so a player who never looks at them
-is ungated (see the Ready row in §7). Making it mandatory is a rule change, so it is asked rather than
-assumed. Both of the others have working defaults, so nothing is blocked.
+one the peek-gate pass raised, which is **not** an engine flag and so is not in §6 — **should the
+opening peek be mandatory?** Ready is currently gated on *closing* the two notices, so a player who
+never looks at them is ungated (see the Ready row in §7). Making it mandatory is a rule change, so it
+is asked rather than assumed. All three have working defaults, so nothing is blocked.
 
 <!-- BEGIN:nextjs-agent-rules -->
 

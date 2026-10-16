@@ -7,6 +7,7 @@ import type { Intent } from '@/components/ActionBar';
 import { Card } from '@/components/Card';
 import { CardFlights } from '@/components/CardFlights';
 import { Hand } from '@/components/Hand';
+import { PeekWatch } from '@/components/PeekWatch';
 import { GameLog, PeekTray, Scoreboard, StatusPill } from '@/components/Panels';
 import type { Game } from '@/lib/useGame';
 
@@ -272,6 +273,7 @@ export function GameScreen({ game, onQuit }: { game: Game; onQuit: () => void })
   return (
     <main className="kb-table kb-table--game">
       <CardFlights view={view} />
+      <PeekWatch view={view} />
       <header className="kb-topbar">
         <span className="kb-chip kb-chip--dark">Room {view.roomCode}</span>
         <span className="kb-label">

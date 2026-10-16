@@ -52,8 +52,12 @@ A card taken from the discard pile must be **swapped in**. You can't take it jus
 | **7 or 8** | Look at one of **your own** cards. |
 | **9 or 10** | Look at one **opponent's** card. |
 | **Jack** | **Blind-swap** any two cards on the table. |
-| **Queen** | Swap one of your cards with any other card. You **may look at** the card you receive. |
+| **Queen** | Swap one of your cards with any other card. **Neither player sees what moved.** |
 | **King** | Look at any two cards, then **decide whether to swap them** and announce your decision. |
+
+### Seeing who is looking at what
+
+When another player looks at a card — with a 7, 8, 9, 10 or King, or their opening peek — **you see the card get lifted**, with an eye on it and a line naming who looked and which card. You never see its face, only that it was looked at. If the card is **yours**, the mark is **red** rather than yellow, because that is the one you need to notice.
 
 ## Tapping: the out-of-turn race
 
@@ -125,6 +129,7 @@ Because the game runs on a server with no timers that stay running, deadlines ar
 
 | Rule | What it does |
 |---|---|
+| **Two decks** | The host deals a second deck of 52, so every card exists twice and twice as many cards can match a tap. 104 cards; 108 with Jokers on. |
 | **Jokers** | Adds two Jokers, each worth 0. |
 | **Matt's pairs** | A matching pair of cards in your hand scores **0** (red Kings excluded). |
 

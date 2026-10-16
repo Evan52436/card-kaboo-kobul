@@ -1,11 +1,10 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { DECK_SIZE } from '../src/engine/cards';
 import { tick } from '../src/engine/reduce';
 import type { Ctx } from '../src/engine/types';
 import { createTable, seededRng } from './helpers';
 import { MAX_STEPS, randomAction } from './fuzz';
-import { accountingErrors, leakedCardIds } from './invariants';
+import { accountingErrors, cardsInPlay, leakedCardIds } from './invariants';
 
 /**
  * ============================================================================
@@ -26,15 +25,20 @@ const FC_SEED = 20261015;
 /**
  * Play one round at random, checking every invariant after every single action.
  * Returns the phase the round finished in.
+ *
+ * `decks` is a dimension here on purpose. Two decks is not "the same game with a
+ * bigger pile": every rank exists twice, so a tap has twice as many legal
+ * answers, and any assumption anywhere that a rank or a face is unique on the
+ * table would only show up in a 104-card game. This is where that assumption
+ * gets found rather than in production.
  */
-function fuzzRound(seed: number, players: number, jokers: boolean): string {
+function fuzzRound(seed: number, players: number, jokers: boolean, decks: 1 | 2 = 1): string {
   const rng = seededRng(seed);
-  const t = createTable({ players, seed: seed ^ 0x5f3759df, rules: { jokers } });
-  const total = jokers ? DECK_SIZE + 2 : DECK_SIZE;
-  const where = `seed ${seed}, ${players} players, jokers=${jokers}`;
+  const t = createTable({ players, seed: seed ^ 0x5f3759df, rules: { jokers, decks } });
+  const where = `seed ${seed}, ${players} players, jokers=${jokers}, decks=${decks}`;
 
   const check = (step: number, context: string): void => {
-    expect(accountingErrors(t.state, total), `${where} (step ${step}): card accounting after ${context}`).toEqual([]);
+    expect(accountingErrors(t.state), `${where} (step ${step}): card accounting after ${context}`).toEqual([]);
     for (const p of t.state.players) {
       expect(
         leakedCardIds(t.state, p.id),
@@ -76,14 +80,15 @@ function fuzzRound(seed: number, players: number, jokers: boolean): string {
 }
 
 describe('property: a round always terminates', () => {
-  it('in random play, at every table size, with and without jokers', () => {
+  it('in random play, at every table size, with and without jokers, on one deck or two', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 2 ** 31 - 1 }),
         fc.integer({ min: 2, max: 4 }),
         fc.boolean(),
-        (seed, players, jokers) => {
-          fuzzRound(seed, players, jokers);
+        fc.constantFrom<1 | 2>(1, 2),
+        (seed, players, jokers, decks) => {
+          fuzzRound(seed, players, jokers, decks);
         },
       ),
       { numRuns: 200, seed: FC_SEED },
@@ -104,23 +109,24 @@ describe('property: a round always terminates', () => {
         guard += 1;
       }
       expect(t.state.phase, `${players} silent players never finished the round`).toBe('reveal');
-      expect(accountingErrors(t.state, DECK_SIZE)).toEqual([]);
+      expect(accountingErrors(t.state)).toEqual([]);
     }
   });
 });
 
 describe('property: every card id is accounted for exactly once', () => {
-  it('holds after dealing, for any seed and table size', () => {
+  it('holds after dealing, for any seed, table size, and deck count', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 2 ** 31 - 1 }),
         fc.integer({ min: 2, max: 8 }),
         fc.boolean(),
-        (seed, players, jokers) => {
-          const t = createTable({ players, seed, rules: { jokers } });
-          const total = jokers ? DECK_SIZE + 2 : DECK_SIZE;
+        fc.constantFrom<1 | 2>(1, 2),
+        (seed, players, jokers, decks) => {
+          const t = createTable({ players, seed, rules: { jokers, decks } });
+          const total = cardsInPlay(t.state.rules);
 
-          expect(accountingErrors(t.state, total), `seed ${seed}, ${players} players`).toEqual([]);
+          expect(accountingErrors(t.state), `seed ${seed}, ${players} players, decks=${decks}`).toEqual([]);
           // And the deal is what it claims to be.
           for (const p of t.state.players) {
             expect(p.hand).toHaveLength(t.rules.handSize);
@@ -139,12 +145,12 @@ describe('property: every card id is accounted for exactly once', () => {
         const t = createTable({ players, seed });
         for (const id of t.ids) {
           t.send({ type: 'PEEK', playerId: id, slot: 2 });
-          expect(accountingErrors(t.state, DECK_SIZE)).toEqual([]);
+          expect(accountingErrors(t.state)).toEqual([]);
           t.send({ type: 'READY', playerId: id });
-          expect(accountingErrors(t.state, DECK_SIZE)).toEqual([]);
+          expect(accountingErrors(t.state)).toEqual([]);
         }
         expect(t.state.phase).toBe('turnStart');
-        expect(accountingErrors(t.state, DECK_SIZE)).toEqual([]);
+        expect(accountingErrors(t.state)).toEqual([]);
       }),
       { numRuns: 150, seed: FC_SEED },
     );

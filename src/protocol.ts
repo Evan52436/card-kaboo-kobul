@@ -122,6 +122,15 @@ export function isRoomError(value: unknown): value is RoomError {
   return typeof value === 'object' && value !== null && (value as RoomError).ok === false;
 }
 
+/**
+ * What the host may choose when they deal. The server keeps only these keys; a
+ * request body does not get to set any other rule.
+ */
+export interface DealOptions {
+  /** One deck (52 cards) or two shuffled together (104). Absent means one. */
+  decks?: 1 | 2;
+}
+
 /** One private channel per player per room. Never a shared table channel. */
 export function roomChannel(code: string, playerId: PlayerId): string {
   return `kaboo:room:${code}:p:${playerId}`;

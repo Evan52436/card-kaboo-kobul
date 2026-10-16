@@ -8,6 +8,13 @@ export const DEFAULT_RULES: RuleConfig = {
   // /* Jokers */ off by default, per the brief.
   jokers: false,
 
+  // One standard deck by default; the host may shuffle in a second (decks: 2).
+  decks: 1,
+
+  // The Queen swap is blind for both players, by the owner's call (AGENTS.md §6).
+  // The original gist lets the swapper look at what they receive: `queenLooks: true`.
+  queenLooks: false,
+
   // /* Matt's pairs */ off by default, per the brief.
   mattsPairs: false,
 

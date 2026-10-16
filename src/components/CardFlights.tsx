@@ -112,6 +112,10 @@ function fly(move: Move, reduced: boolean): Flight | null {
     height: `${a.height}px`,
     transformOrigin: 'top left',
   });
+  // A face-down ghost draws its lattice from `--card-w`, and the ghost is not
+  // inside any hand that sets it. Giving it its own starting width means the back
+  // looks like the back it is standing in for, and scales with the flight.
+  ghost.style.setProperty('--card-w', `${a.width}px`);
 
   // One face when the card looks the same at both ends; two, crossfaded at the
   // midpoint, when it turns over on the way (a card you drew goes face-down into
@@ -187,7 +191,14 @@ function faceLayer(card: PublicCard | null): HTMLElement {
     layer.className = 'kb-ghost__layer';
     const img = document.createElement('img');
     img.className = 'kb-card__face';
-    img.src = `/cards/${file}.png`;
+    img.src = `/cards/${file}.webp`;
+    img.decoding = 'async';
+    // The same one-time fall back to the PNG that `Card` has: see `fallToPng`.
+    img.addEventListener('error', () => {
+      if (img.dataset.fallback) return;
+      img.dataset.fallback = '1';
+      img.src = img.src.replace(/\.webp$/, '.png');
+    });
     img.alt = '';
     img.draggable = false;
     layer.append(img);

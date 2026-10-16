@@ -6,6 +6,7 @@ import type {
   GameResult,
   GameState,
   LogEntry,
+  Look,
   PlayerId,
   PublicCard,
   RoundResult,
@@ -106,6 +107,13 @@ export interface Projection {
   canTap: boolean;
   legalActions: ActionType[];
   log: LogEntry[];
+  /**
+   * Who lifted which card, newest last. Public, because at a real table you can
+   * watch a card being picked up; it names a slot and never a face, so it tells a
+   * player THAT one of their cards is being looked at, not what it is. The client
+   * animates it. See `Look`.
+   */
+  looks: Look[];
   roundResult: RoundResult | null;
   gameResult: GameResult | null;
   rules: RuleConfig;
@@ -313,6 +321,7 @@ export function project(state: GameState, viewerId: PlayerId): Projection {
     canTap: canTapNow(state),
     legalActions: legalActions(state, viewerId),
     log: state.log.slice(-LOG_TAIL),
+    looks: (state.looks ?? []).map((l) => ({ ...l })),
     roundResult: state.roundResult,
     gameResult: state.gameResult,
     rules: state.rules,

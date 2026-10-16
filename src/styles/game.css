@@ -359,6 +359,80 @@ button.kb-card:enabled:active {
   }
 }
 
+/* --- Card: being looked at -------------------------------------------------
+ * Somebody is looking at this card. At a real table you would see them lift it;
+ * here the card lifts and tilts, a ring goes round it and an eye sits on it for a
+ * moment (the eye is added by `PeekWatch`, the lift is a Web Animation). Yellow
+ * when it is somebody's card, red when it is YOURS: "someone is looking at my
+ * card" is the one the owner has to notice, and it must not look like the others.
+ * No face is involved anywhere: the server only says which slot was lifted. */
+.kb-card--watched {
+  box-shadow: 0 0 0 3px var(--c-highlight), var(--shadow-sm);
+}
+
+.kb-card--spied {
+  box-shadow: 0 0 0 4px var(--c-danger), var(--shadow-sm);
+}
+
+.kb-eye {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 55%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: var(--c-highlight);
+  color: var(--c-ink);
+  border: var(--bw-2) solid var(--c-ink);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+}
+
+.kb-eye--yours {
+  background: var(--c-danger);
+  color: var(--c-bg);
+}
+
+.kb-eye svg {
+  width: 70%;
+  height: 70%;
+}
+
+/* The same thing in words, for anyone not watching that hand and for a screen
+   reader. Fixed to the top so it never moves the table. */
+.kb-look-note {
+  position: fixed;
+  top: calc(var(--space-2) + env(safe-area-inset-top));
+  left: 50%;
+  z-index: 70;
+  max-width: calc(100vw - var(--space-6));
+  margin: 0;
+  translate: -50% 0;
+  padding: var(--space-1) var(--space-3);
+  background: var(--c-highlight);
+  border: var(--bw-2) solid var(--c-ink);
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--fw-bold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  text-align: center;
+  pointer-events: none;
+}
+
+.kb-look-note[data-yours='true'] {
+  background: var(--c-danger);
+  color: var(--c-bg);
+}
+
+.kb-look-note:empty {
+  display: none;
+}
+
 /* --- Card flights ----------------------------------------------------------
  * The ghost that carries a card across the table (see `CardFlights.tsx`). It is
  * a real `.kb-card` so it is the same frame, border and shadow as the card it
@@ -408,11 +482,54 @@ button.kb-card:enabled:active {
   }
 }
 
-/* Face-down: ink, a white keyline, and a second thinner one inside it. */
+/* Face-down: the back of a playing card, in the design system's own language.
+ *
+ * Ink ground, a white keyline with a second thin one inside it (as before), and
+ * now a diamond lattice between them with a yellow diamond at the centre — the
+ * two things every playing-card back has, a repeating pattern and a medallion, so
+ * a shut card reads as a card at a glance rather than as a black rectangle.
+ *
+ * All CSS, so there is nothing to load or license, and it scales with the card:
+ * the lattice spacing is a fraction of `--card-w` (declared HERE, from the
+ * inherited width, because a custom property is substituted where it is declared
+ * — see AGENTS.md §9). The lines are the page colour at low strength, so they
+ * stay quiet next to the keyline and never compete with a face. */
 .kb-card__back {
+  --lattice: calc(var(--card-w) / 7);
+  --lattice-line: color-mix(in srgb, var(--c-bg) 34%, transparent);
   position: absolute;
   inset: 3px;
   border: var(--bw-2) solid var(--c-bg);
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0,
+      transparent calc(var(--lattice) - 1px),
+      var(--lattice-line) calc(var(--lattice) - 1px),
+      var(--lattice-line) var(--lattice)
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0,
+      transparent calc(var(--lattice) - 1px),
+      var(--lattice-line) calc(var(--lattice) - 1px),
+      var(--lattice-line) var(--lattice)
+    );
+}
+
+/* The medallion: a yellow diamond, ringed in ink so the lattice stops short of it. */
+.kb-card__back::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  rotate: 45deg;
+  background: var(--c-highlight);
+  border: var(--bw-2) solid var(--c-bg);
+  box-shadow: 0 0 0 var(--bw-2) var(--c-ink);
 }
 
 .kb-card__back::after {
@@ -731,6 +848,32 @@ button.kb-card:enabled:active {
 .kb-input:focus-visible {
   outline: var(--bw-2) solid var(--c-primary);
   outline-offset: 2px;
+}
+
+/* The host's pick of deck count in the lobby: two toggles that read as a pair.
+   The pressed one is pressed in AND filled — colour alone would not say which of
+   the two is the answer. */
+.kb-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kb-choice__row {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.kb-btn--toggle[aria-pressed='true'],
+.kb-btn--toggle[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--c-ink);
+  color: var(--c-bg);
+  box-shadow: none;
+  transform: translate(4px, 4px);
 }
 
 /* The room code is read aloud, so it is large, mono and unmissable. */

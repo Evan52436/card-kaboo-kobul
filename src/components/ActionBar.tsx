@@ -251,7 +251,8 @@ function EffectBar(props: ActionBarProps) {
     );
   }
 
-  const label = LABELS[rank] ?? 'Use the effect';
+  const label =
+    rank === 'Q' && view.rules.queenLooks ? QUEEN_LOOKS_LABEL : (LABELS[rank] ?? 'Use the effect');
   return (
     <Bar>
       <Hint>{closeFirst ? CLOSE_FIRST : label}</Hint>
@@ -320,13 +321,16 @@ function EffectBar(props: ActionBarProps) {
 /** Why the turn buttons are inert while a card you were shown is still open. */
 const CLOSE_FIRST = 'Tap Remember it to close the card you saw first.';
 
+/** The Queen as the original gist words it, for a table that turned `queenLooks` on. */
+const QUEEN_LOOKS_LABEL = 'Queen — swap one of yours with any other card; you may look at what you get.';
+
 const LABELS: Record<string, string> = {
   '7': 'Seven — look at one of your own cards.',
   '8': 'Eight — look at one of your own cards.',
   '9': 'Nine — look at one of another player’s cards.',
   '10': 'Ten — look at one of another player’s cards.',
   J: 'Jack — swap any two cards without looking at either.',
-  Q: 'Queen — swap one of yours with any other card; you may look at what you get.',
+  Q: 'Queen — swap one of yours with any other card. Nobody looks: not you, not them.',
   K: 'King — look at any two cards, then decide whether to swap them.',
 };
 

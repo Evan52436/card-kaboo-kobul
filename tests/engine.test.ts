@@ -309,7 +309,7 @@ describe('effects', () => {
     });
   });
 
-  it('Queen swaps with an opponent and shows you what you received', () => {
+  it('Queen swaps with an opponent and shows NEITHER of them what moved', () => {
     arrange(t, { hands: { p1: [cid('9', 'S'), cid('2', 'D'), cid('3', 'C'), cid('4', 'S')] } });
     const mineBefore = handOf(t, 'p2')[0];
     discardCard(cid('Q', 'H'));
@@ -319,11 +319,53 @@ describe('effects', () => {
       slot: 0,
       target: { playerId: 'p1', slot: 0 },
     });
+    // The cards really did move...
     expect(handOf(t, 'p2')[0]).toBe(cid('9', 'S'));
     expect(handOf(t, 'p1')[0]).toBe(mineBefore);
+
+    // ...and nobody was told a face. This is `rules.queenLooks: false`, the
+    // default: the owner's call is that a swap between two players is blind for
+    // BOTH of them, so the swapper does not get to inspect what they received
+    // and the player they took from does not get to see what they were left
+    // with. It is the whole point of the effect being a gamble rather than a
+    // free improvement. AGENTS.md §6.
+    expect(result.events.filter((e) => e.type === 'revealed')).toHaveLength(0);
+    // The public event says only WHERE the two cards went, never what they are.
+    // (`rank` on it is the rank of the card that was DISCARDED to start the
+    // effect — the top of the pile, face-up and public — not of either card that
+    // moved, so the assertion is about the `card` field and the two refs.)
+    const used = publicEvents(result.events).filter((e) => e.type === 'effectUsed');
+    expect(used).toHaveLength(1);
+    expect(used[0]).not.toHaveProperty('card');
+    expect(result.events.every((e) => !('card' in e))).toBe(true);
+    // Both sides of the swap are told where it happened, and nothing else.
+    expect(privateTo(result.events, 'p1').filter((e) => e.type === 'revealed')).toHaveLength(0);
+  });
+
+  it('Queen shows the swapper what they received when `queenLooks` is on', () => {
+    // The non-default reading from the original gist, kept covered so the flag
+    // stays honest in both positions (AGENTS.md §6, §9 "legalActions is honest"
+    // in spirit: a flag with a branch behind it needs a test on each side).
+    const q = createTable({ players: 2, rules: { queenLooks: true } });
+    finishPeek(q);
+    arrange(q, {
+      hands: { p1: [cid('9', 'S'), cid('2', 'D'), cid('3', 'C'), cid('4', 'S')] },
+      deck: [cid('Q', 'H')],
+    });
+    q.ok({ type: 'DRAW', playerId: 'p2', from: 'deck' });
+    q.ok({ type: 'DISCARD', playerId: 'p2' });
+
+    const result = q.ok({
+      type: 'EFFECT_QUEEN_SWAP',
+      playerId: 'p2',
+      slot: 0,
+      target: { playerId: 'p1', slot: 0 },
+    });
     const revealed = privateTo(result.events, 'p2').filter((e) => e.type === 'revealed');
     expect(revealed).toHaveLength(1);
     expect((revealed[0]!.card as { rank: string }).rank).toBe('9');
+    // Still only the swapper. The player they took from learns nothing either way.
+    expect(privateTo(result.events, 'p1').filter((e) => e.type === 'revealed')).toHaveLength(0);
   });
 
   it('refuses a Queen swap with yourself', () => {

@@ -1,5 +1,5 @@
 import { rooms } from '@/server/deps';
-import { codeOf, reply, sessionOf } from '@/server/http';
+import { bodyOf, codeOf, reply, sessionOf } from '@/server/http';
 
 /**
  * The host deals. Host only, at least two players, once.
@@ -16,5 +16,6 @@ export async function POST(
   { params }: { params: Promise<{ code: string }> },
 ): Promise<Response> {
   const { code } = await params;
-  return reply(await rooms().startRoom(codeOf(code), sessionOf(request)));
+  // The host's choice of deck count rides in the body; `startRoom` keeps only that.
+  return reply(await rooms().startRoom(codeOf(code), sessionOf(request), await bodyOf(request)));
 }

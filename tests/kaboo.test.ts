@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { DECK_SIZE } from '../src/engine/cards';
 import { arrange, arrangeShortDeck, cid, createTable, finishPeek, handOf } from './helpers';
 import type { Table } from './helpers';
 import { accountingErrors } from './invariants';
@@ -472,7 +471,7 @@ describe('deck out (house rule)', () => {
 
     // The penalty card was the last one, so the round ends with p2 mid-draw.
     expect(t.state.phase).toBe('reveal');
-    expect(accountingErrors(t.state, DECK_SIZE)).toEqual([]);
+    expect(accountingErrors(t.state)).toEqual([]);
     // p2 was holding that card, so it is in their hand — not silently deleted.
     expect(handOf(t, 'p2')[4]).toBe(cid('K', 'H'));
     expect(t.state.roundResult!.totals.p2).toBe(1 + 2 + 3 + 4 - 1);
@@ -497,7 +496,7 @@ describe('deck out (house rule)', () => {
     t.ok({ type: 'TAP_CHOOSE', playerId: 'p1', target: { playerId: 'p1', slot: 0 } });
 
     expect(t.state.phase).toBe('reveal');
-    expect(accountingErrors(t.state, DECK_SIZE)).toEqual([]);
+    expect(accountingErrors(t.state)).toEqual([]);
     expect(handOf(t, 'p2')[4]).toBe(cid('7', 'D')); // the card p2 was holding
   });
 });

@@ -1,11 +1,13 @@
 'use client';
 
+import type { SyntheticEvent } from 'react';
+import { DECK_SIZE, SET_SIZE } from '@/engine/cards';
 import type { PublicCard } from '@/engine/types';
 
 /**
  * A playing card: the real thing, from a public-domain deck.
  *
- * The faces are PNGs under `/public/cards`, rasterised at 3x the widest the UI
+ * The faces are WebPs under `/public/cards`, rasterised at 3x the widest the UI
  * ever draws a card, so they stay crisp on any phone. The back is ours — drawn
  * in CSS, in the design system's own ink-block language, so a face-down card can
  * never be mistaken for a face-up one at a glance. See AGENTS.md §8 for the
@@ -99,21 +101,44 @@ function Face({ card, faceDown }: { card?: PublicCard | null; faceDown?: boolean
     // but add a round trip and a cache entry per card — while the one thing that
     // matters here is that a card is on screen the instant it is dealt.
     // eslint-disable-next-line @next/next/no-img-element
-    <img className="kb-card__face" src={`/cards/${file}.png`} alt="" draggable={false} />
+    <img
+      className="kb-card__face"
+      src={`/cards/${file}.webp`}
+      alt=""
+      draggable={false}
+      decoding="async"
+      onError={fallToPng}
+    />
   );
+}
+
+/**
+ * Until `bun run cards:webp` has been run only the PNGs exist, and once it has only
+ * the WebPs do. Trying the WebP first and falling back to the PNG once means
+ * neither state shows a hole where a card should be.
+ */
+export function fallToPng(event: SyntheticEvent<HTMLImageElement>): void {
+  const img = event.currentTarget;
+  if (img.dataset.fallback) return;
+  img.dataset.fallback = '1';
+  img.src = img.src.replace(/\.webp$/, '.png');
 }
 
 /**
  * The artwork's filename for a card: rank then suit, as the deck ships.
  *
- * The two jokers are the engine's ids 52 and 53 in that order; the artwork calls
- * them `Joker1` and `Joker2`, so the id is the only thing that can tell them
+ * The two jokers are the first two ids after the 52 standard cards; the artwork
+ * calls them `Joker1` and `Joker2`, so the id is the only thing that can tell them
  * apart — `suit` is null for both and the ranks are identical.
+ *
+ * A second deck repeats the first with every id shifted by one set, and the art
+ * has one picture per card, so a joker is told apart by its place in ITS set.
  */
 export function cardFile(card: PublicCard): string | null {
   if (card.rank === 'JOKER') {
-    if (card.id === 52) return 'Joker1';
-    if (card.id === 53) return 'Joker2';
+    const inSet = card.id % SET_SIZE;
+    if (inSet === DECK_SIZE) return 'Joker1';
+    if (inSet === DECK_SIZE + 1) return 'Joker2';
     return null;
   }
   if (!card.suit) return null;

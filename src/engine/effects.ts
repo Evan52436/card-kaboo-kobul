@@ -1,7 +1,7 @@
 import { card, publicCard } from './cards';
 import { illegal } from './errors';
 import { emit, emitPrivate } from './events';
-import { addLog, isSlotOccupied, setSlot, slotCard } from './state';
+import { addLog, addLook, isSlotOccupied, setSlot, slotCard } from './state';
 import { advanceTurn } from './turn';
 import type { Action, CardRef, Ctx, EngineError, EngineEvent, GameState, PlayerId, Rank } from './types';
 
@@ -108,6 +108,7 @@ export function resolveEffect(
         reason: 'effect',
       });
       addLog(state, { round: state.round, kind: 'effect', actor: me, text: 'ownPeek' });
+      addLook(state, { by: me, playerId: me, slot: action.slot, reason: 'own' });
       emit(events, { type: 'effectUsed', by: me, rank: eff.rank, targetPlayerId: me, targetSlot: action.slot });
       finishEffect(state, ctx, events);
       return null;
@@ -134,6 +135,8 @@ export function resolveEffect(
         target: action.targetPlayerId,
         text: 'otherPeek',
       });
+      // Everyone at the table can see WHICH card was lifted, never what it is.
+      addLook(state, { by: me, playerId: action.targetPlayerId, slot: action.slot, reason: 'other' });
       emit(events, {
         type: 'effectUsed',
         by: me,
@@ -170,7 +173,7 @@ export function resolveEffect(
       return null;
     }
 
-    // --- Queen: swap one of yours with any other card, see what you receive --
+    // --- Queen: swap one of yours with any other card ----------------------
     case 'EFFECT_QUEEN_SWAP': {
       if (eff.rank !== 'Q') return illegal();
       const own: CardRef = { playerId: me, slot: action.slot };
@@ -180,15 +183,20 @@ export function resolveEffect(
       const received = slotCard(state, action.target);
       if (received === null) return illegal();
       if (!swapCards(state, own, action.target)) return illegal();
-      // "you may look at the card you receive" — auto-revealed: a free look is
-      // never disadvantageous, so prompting for it would only cost a round trip.
-      emitPrivate(events, me, {
-        type: 'revealed',
-        reason: 'queen',
-        playerId: action.target.playerId,
-        slot: action.target.slot,
-        card: publicCard(received),
-      });
+      // The original rule lets the swapper look at what they receive, and that
+      // look is auto-revealed: a free look is never disadvantageous, so prompting
+      // for it would only cost a round trip. It is OFF by default
+      // (`rules.queenLooks`): the owner wants the swap blind for BOTH players, so
+      // neither the swapper nor the player they swapped with sees the card.
+      if (state.rules.queenLooks) {
+        emitPrivate(events, me, {
+          type: 'revealed',
+          reason: 'queen',
+          playerId: action.target.playerId,
+          slot: action.target.slot,
+          card: publicCard(received),
+        });
+      }
       addLog(state, {
         round: state.round,
         kind: 'effect',
@@ -228,6 +236,8 @@ export function resolveEffect(
         slot: action.b.slot,
         card: publicCard(cb),
       });
+      addLook(state, { by: me, playerId: action.a.playerId, slot: action.a.slot, reason: 'king' });
+      addLook(state, { by: me, playerId: action.b.playerId, slot: action.b.slot, reason: 'king' });
       eff.a = action.a;
       eff.b = action.b;
       eff.awaitingKingDecision = true;
